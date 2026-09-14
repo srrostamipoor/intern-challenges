@@ -1,0 +1,5 @@
+﻿Host myserver
+    HostName localhost
+    Port 2222
+    User sara
+    IdentityFile <path-to-private-key>

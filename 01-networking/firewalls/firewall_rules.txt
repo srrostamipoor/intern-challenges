@@ -1,0 +1,5 @@
+iptables -A INPUT -p tcp --dport 22 -j ACCEPT   # allow SSH
+iptables -A INPUT -p tcp --dport 80 -j ACCEPT   # allow HTTP
+iptables -A INPUT -i lo -j ACCEPT               # allow localhost
+iptables -A INPUT -j DROP                        # drop everything else
+iptables -I INPUT -p tcp --dport 5000 -j ACCEPT  # later: open port 5000

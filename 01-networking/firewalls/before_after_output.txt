@@ -1,0 +1,10 @@
+=== BEFORE (port 5000 blocked) ===
+$ curl --max-time 5 http://firewall-box:5000
+curl: (28) Connection timed out after 5002 milliseconds
+
+=== AFTER opening port 5000 ===
+$ curl --max-time 5 http://firewall-box:5000
+<!DOCTYPE HTML>
+<html lang="en">
+<head><title>Directory listing for /</title></head>
+... (directory listing returned - port is now reachable)

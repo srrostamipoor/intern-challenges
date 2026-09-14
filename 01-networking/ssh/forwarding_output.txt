@@ -1,0 +1,9 @@
+﻿Command: curl http://localhost:9000
+
+StatusCode        : 200
+StatusDescription : OK
+Content           : Response from SERVER web
+Server            : BaseHTTP/0.6 Python/3.12.14
+
+Result: The web app (running on web-app:8080 inside the Docker network)
+was reached from the Windows host via localhost:9000 through the SSH tunnel.
