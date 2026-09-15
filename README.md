@@ -28,7 +28,7 @@ Hands-on, implementation-based challenges completed as part of my DevOps interns
 - [x] Challenge 7 — Branching strategy
 - [x] Challenge 8 — Merge vs rebase
 - [x] Challenge 9 — Collaboration workflow
-- [ ] Challenge 10 — Recovery tools
+- [x] Challenge 10 — Recovery tools
 
 ## How to read this repo
 
