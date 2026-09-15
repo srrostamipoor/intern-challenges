@@ -20,14 +20,14 @@ Hands-on, implementation-based challenges completed as part of my DevOps interns
 ## Progress
 
 - [x] Challenge 1 — TCP vs UDP
-- [ ] Challenge 2 — DNS resolution
-- [ ] Challenge 3 — HTTP/HTTPS
-- [ ] Challenge 4 — Load balancing
-- [ ] Challenge 5 — SSH
-- [ ] Challenge 6 — Firewalls & ports
-- [ ] Challenge 7 — Branching strategy
-- [ ] Challenge 8 — Merge vs rebase
-- [ ] Challenge 9 — Collaboration workflow
+- [x] Challenge 2 — DNS resolution
+- [x] Challenge 3 — HTTP/HTTPS
+- [x] Challenge 4 — Load balancing
+- [x] Challenge 5 — SSH
+- [x] Challenge 6 — Firewalls & ports
+- [x] Challenge 7 — Branching strategy
+- [x] Challenge 8 — Merge vs rebase
+- [x] Challenge 9 — Collaboration workflow
 - [ ] Challenge 10 — Recovery tools
 
 ## How to read this repo
