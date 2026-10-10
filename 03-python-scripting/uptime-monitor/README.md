@@ -133,10 +133,22 @@ kill %1
 ## Write-up (fill this in after completing the challenge)
 
 **What I built:**
-<!-- describe your implementation -->
+A Python script that takes a URL and a check interval via `argparse`, sends an HTTP request on each interval, and checks the status code. If the site is healthy (2xx) it prints a success message; if it's down or doesn't respond, it prints a timestamped alert with the reason and writes it to a log file. The timeout and interval are read from environment variables.
 
 **What I struggled with:**
-<!-- honest reflection -->
+I hadn't used `argparse` before, so figuring out how to take inputs from the command line was a challenge at first. The concept of `.env.example` was also new to me — understanding which parts of the project (like secrets and config values) should be kept out of Git took a bit to click.
 
 **What I'd do differently:**
-<!-- if you had more time -->
+With more time I'd add three things: a retry mechanism that alerts only after several consecutive failures instead of immediately; real email sending with `smtplib` (the stretch goal); and cleaner handling of `Ctrl+C` so it prints a tidy message like "Monitoring stopped" instead of an ugly traceback.
+
+---
+
+## Guided questions — answers
+
+**Q1 — 301 Redirect:** With my current logic, a 301 counts as DOWN because it's outside the 200–299 range. In reality a 301 means the site works but has moved. Also, `requests` follows redirects by default, so I'd usually see the final 200 anyway. To be stricter, I could widen the accepted range to include 3xx.
+
+**Q2 — Timeout vs 500:** A timeout means no response came back at all — the server didn't answer within the time limit (slow, hung, or unreachable), caught by `except requests.exceptions.Timeout`. A 500 means a response *did* come back — the connection worked, but the server reported an internal error. It's not an exception, so it's handled by the `else` branch as a non-2xx status code.
+
+**Q3 — Secrets and .env.example:** Secrets like passwords or tokens must never be committed to Git, because the repo is public and anyone could read them — and they'd stay in the Git history even after deletion. Instead they're read from environment variables (`os.environ`). The `.env.example` file lists the variable names the project needs, with placeholder (not real) values, so anyone setting up the project knows what to configure, while the real `.env` stays out of Git.
+
+**Q4 — Production-ready improvements:** I'd alert only after several consecutive failures (a failure threshold) so one brief network blip doesn't cause a false alarm. I'd add alert de-duplication — alert once when the site goes down and once when it recovers, instead of repeating every interval. And I'd log everything with timestamps to keep a full health history.
