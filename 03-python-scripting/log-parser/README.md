@@ -140,11 +140,25 @@ print("sample.log created")
 4. If the log file were 10 GB, would your current approach work? What would you change?
 
 ---
-
 ## Write-up
 
 **What I built:**
+A Python script that parses an Nginx access log using a regex, and reports the total request count, a status-code breakdown, the top 10 IPs, the top 10 URLs, and every 5xx error. It supports `--output` to write the report to a file and `--errors-only` to show just the 5xx errors, and it uses `pathlib` to check the file exists before reading.
 
 **What I struggled with:**
+Understanding `collections.Counter` at first — why it's better than counting manually with a plain dict. Once I saw that it counts automatically and has `most_common()`, it clicked. The regex was also new, but breaking it into named groups made it readable.
 
 **What I'd do differently:**
+For very large files I'd update the counters as I read each line instead of collecting everything into a list first, so memory stays low.
+
+---
+
+## Guided questions — answers
+
+**Q1 — Counter vs dict:** With a plain dict I'd have to count manually — check if the key exists, create it with 1 if not, or add 1 if it does. `Counter` does all that automatically, and it has `most_common()`, which returns the most frequent items already sorted — with a plain dict I'd have to write the sorting myself.
+
+**Q2 — Malformed lines:** `parse_line` returns `None` when a line doesn't match the regex, instead of raising an error. In `parse_file`, `if entry:` skips any `None`, so bad lines just aren't added to the list and the script doesn't crash. I tested this by adding a broken line — the total came out 501 instead of 502.
+
+**Q3 — pathlib:** I used `pathlib.Path` to handle the log path. It treats the path as a smart object, makes checking if the file exists easy with `.exists()` (so a missing file gives a clean message instead of an ugly traceback), and handles path separators across Windows and Linux automatically.
+
+**Q4 — 10 GB file:** Reading line by line (`for line in f`) is already good — it doesn't load the whole file into memory. But I collect every parsed line into a list, which for 10 GB would fill memory. The fix is to update the counters on the fly as each line is read, so only the counts stay in memory, not the lines.
