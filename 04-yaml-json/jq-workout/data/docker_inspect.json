@@ -1,0 +1,27 @@
+[
+  {
+    "Id": "a1b2c3d4e5f6",
+    "Name": "/test-nginx",
+    "State": {
+      "Status": "running",
+      "Running": true,
+      "Pid": 1234
+    },
+    "Config": {
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin",
+        "NGINX_VERSION=1.25.3"
+      ],
+      "ExposedPorts": {
+        "80/tcp": {},
+        "443/tcp": {}
+      }
+    },
+    "NetworkSettings": {
+      "IPAddress": "172.17.0.2",
+      "Ports": {
+        "80/tcp": [{"HostIp": "0.0.0.0", "HostPort": "8080"}]
+      }
+    }
+  }
+]

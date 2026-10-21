@@ -181,11 +181,25 @@ jq ???
 4. When would you use `jq` vs Python's `json` module? What's the tradeoff?
 
 ---
-
 ## Write-up
 
 **What I built:**
+A set of 15 jq commands across three datasets — real GitHub repo data, fake Kubernetes pods, and a docker inspect output — saved in answers.sh with comments. The commands extract fields, filter with select(), sort, group, count, and reshape JSON, all from the command line without writing any code.
 
 **Commands I found most useful:**
+select() for filtering, group_by() + map() for counting per category, and string interpolation "\(.field)" for building readable table output. The pipe (|) to chain steps reminded me a lot of shell pipes.
 
 **What surprised me:**
+How much jq feels like working with Python dicts and lists — .items[] is like a loop over a list, and .metadata.name is like data["metadata"]["name"]. Also that docker inspect always returns an array, so you need .[0] even for one container.
+
+---
+
+## Guided questions — answers
+
+**Q1 — .items[] vs [.items[]]:** .items[] streams each element of the array one by one (separate outputs). [.items[]] wraps those elements back into a single new array. The brackets collect the stream into one array.
+
+**Q2 — keys with a hyphen:** For a key like "restart-count" I'd write ."restart-count" with quotes, because without quotes jq reads the hyphen as a minus sign.
+
+**Q3 — jq exits 0 even when select() matches nothing:** If a filter matches nothing, jq still succeeds (exit 0) and just prints nothing. In a shell script this could hide a bug — the script thinks everything is fine even though the data you expected wasn't there. You'd need to check the output length explicitly.
+
+**Q4 — jq vs Python's json module:** jq is great for quick one-off filtering and exploring JSON right in the terminal. Python's json module is better when the logic gets complex, needs to be reused, or is part of a bigger program. The trade-off is quick-and-inline (jq) vs structured-and-maintainable (Python).

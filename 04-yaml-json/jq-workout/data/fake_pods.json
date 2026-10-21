@@ -1,0 +1,29 @@
+{
+  "items": [
+    {
+      "metadata": {"name": "api-server-7d9f", "namespace": "production"},
+      "spec":     {"nodeName": "node-1"},
+      "status":   {"phase": "Running", "containerStatuses": [{"ready": true,  "restartCount": 0,  "state": {"running": {}}}]}
+    },
+    {
+      "metadata": {"name": "worker-abc12",   "namespace": "production"},
+      "spec":     {"nodeName": "node-2"},
+      "status":   {"phase": "Running", "containerStatuses": [{"ready": false, "restartCount": 12, "state": {"waiting": {"reason": "CrashLoopBackOff"}}}]}
+    },
+    {
+      "metadata": {"name": "db-migrator-x",  "namespace": "staging"},
+      "spec":     {"nodeName": "node-1"},
+      "status":   {"phase": "Failed",  "containerStatuses": [{"ready": false, "restartCount": 3,  "state": {"terminated": {"reason": "OOMKilled"}}}]}
+    },
+    {
+      "metadata": {"name": "cache-redis-0",  "namespace": "production"},
+      "spec":     {"nodeName": "node-3"},
+      "status":   {"phase": "Running", "containerStatuses": [{"ready": true,  "restartCount": 0,  "state": {"running": {}}}]}
+    },
+    {
+      "metadata": {"name": "job-cleanup",    "namespace": "staging"},
+      "spec":     {"nodeName": "node-2"},
+      "status":   {"phase": "Running", "containerStatuses": [{"ready": false, "restartCount": 7,  "state": {"waiting": {"reason": "CrashLoopBackOff"}}}]}
+    }
+  ]
+}
