@@ -177,11 +177,27 @@ kubectl apply --dry-run=client -f all-in-one.yaml
 5. In `resources.requests.cpu`, what does `100m` mean? What about `500m`?
 
 ---
-
 ## Write-up
 
 **What I found confusing at first:**
+That selector.matchLabels in the Deployment has to exactly match the template's labels — if they don't match, Kubernetes can't connect the Deployment to its pods. Also the difference between apiVersion values (v1 for ConfigMap/Service, apps/v1 for Deployment) wasn't obvious at first.
 
 **YAML quirks I ran into:**
+Indentation has to be exact and uses spaces, never tabs. Quoting matters: "100" must be quoted in a ConfigMap because values have to be strings, not numbers. The | block scalar keeps line breaks for the multi-line banner. Lists use -, maps use key: value.
 
 **What I'd add next:**
+I'd try applying these with kubectl --dry-run=client to check them against the real Kubernetes schema, and add more resources like an Ingress.
+
+---
+
+## Guided questions — answers
+
+**Q1 — selector must match template labels:** If selector.matchLabels and template.metadata.labels don't match, the Deployment can't find or manage its own pods — it would fail to connect them, and the deployment wouldn't work correctly.
+
+**Q2 — | vs >:** Both are for multi-line strings. | (literal) keeps the line breaks exactly as written. > (folded) joins the lines into one, replacing newlines with spaces. I used | for the banner so each line stays separate.
+
+**Q3 — "100" vs 100:** In YAML, 100 without quotes is a number (integer), and "100" is a string. It matters for ConfigMaps because all ConfigMap values must be strings — an unquoted number would be invalid.
+
+**Q4 — what --- means:** It marks the start of a YAML document. It lets you put multiple separate documents (ConfigMap, Deployment, Service) in one file, separated by ---. It's not strictly required for a single document, but it's good practice.
+
+**Q5 — 100m and 500m in cpu:** The m means milli (thousandths of a CPU core). 100m = 0.1 of a core, 500m = 0.5 of a core. So requests.cpu 100m asks for a tenth of a core, and limits.cpu 500m caps it at half a core.
