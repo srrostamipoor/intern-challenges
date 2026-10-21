@@ -178,11 +178,27 @@ echo "[$(date)] Deploy complete. Version: $(git rev-parse --short HEAD 2>/dev/nu
 - Read the webhook URL from AWS Secrets Manager or HashiCorp Vault instead of a `.env` file
 
 ---
-
 ## Write-up
 
 **What I built:**
+A Python script that runs any shell command as a subprocess, captures its stdout, stderr, and how long it took, and sends the result as a webhook message (Slack/Discord style). It exits with the same exit code as the command, so a CI pipeline can tell whether the command succeeded. If no webhook URL is set, it just prints the message, so it can be tested without a real webhook.
 
 **What I struggled with:**
+Understanding why the exit code matters so much was new to me — at first I didn't see why re-exiting with the command's code was important. Once I saw that CI systems read the exit code to decide pass or fail, it made sense. Separating stdout from stderr with capture_output was also new.
 
 **What I'd do differently:**
+I'd add a --timeout option that kills the command if it runs too long, and log every run to a file for history. I'd also support both Slack and Discord payload formats by detecting the webhook URL.
+
+---
+
+## Guided questions — answers
+
+**Q1 — run() vs call() vs Popen():** subprocess.run() is the modern, simple way — it runs a command, waits for it to finish, and gives back the result (output, exit code). subprocess.call() is older and only returns the exit code, not the output. subprocess.Popen() is the low-level tool that gives full control (you can stream output, run things in the background) but it's more complex. I used run() because it's the simplest for this task.
+
+**Q2 — shell=True convenience vs danger:** shell=True lets me pass the whole command as one string, which is convenient. But it's dangerous because the shell interprets the string — if any part comes from untrusted input, someone could inject extra commands (command injection). For a fixed, trusted command it's fine; for user input, passing a list of arguments without shell=True is safer.
+
+**Q3 — capture_output=True:** It captures the command's stdout and stderr into the result object instead of letting them print straight to the terminal. Without it, the output would just go to the screen and I couldn't store it, measure it, or put it in the webhook message.
+
+**Q4 — sys.exit(result.returncode):** It makes my script exit with the same exit code as the command it ran. This is critical for CI/CD: pipelines check the exit code of each step to decide if it passed or failed. If I always exited 0, the pipeline would think the deploy succeeded even when it actually failed.
+
+**Q5 — time.monotonic() vs time.time():** time.monotonic() is a clock that only ever moves forward, so it's reliable for measuring how long something took. time.time() is the real-world clock, which can jump backward or forward (for example if the system clock is adjusted), which would give a wrong duration. That's why monotonic is preferred for measuring elapsed time.

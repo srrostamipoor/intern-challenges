@@ -155,11 +155,25 @@ This lets you work on parsing logic without burning API quota.
 - Support multiple repos from a `repos.txt` file, one per line
 
 ---
-
 ## Write-up
 
 **What I built:**
+A Python script that connects to the GitHub API, authenticates with a token read from a `.env` file, and runs three checks on a repo: its metadata (stars, open issues, last push), the status of its latest workflow run, and the API rate limit. It prints an alert when open issues cross a threshold, when the last workflow failed, or when few API requests remain. It also has an `--offline` mode that reads a saved JSON response instead of hitting the network.
 
 **What I struggled with:**
+Working with a real API token was new to me — understanding how it goes into the Authorization header and why it must stay out of Git. Navigating the nested JSON (like workflow_runs[0]) also took a moment, but using .get() with defaults made it safe.
 
 **What I'd do differently:**
+I'd add a --watch mode to poll every minute, and support checking multiple repos from a file. I'd also write unit tests using the saved sample_response.json.
+
+---
+
+## Guided questions — answers
+
+**Q1 — response.json() vs json.loads(response.text):** Both turn a JSON string into a Python dict. `response.json()` is a shortcut that the requests library gives you — it works directly on the response. `json.loads(response.text)` does the same thing more manually: you take the text first, then convert it yourself. They give the same result; response.json() is just cleaner.
+
+**Q2 — response.raise_for_status():** It checks the response's status code and raises an error if it's a failure (like 404 or 401). This lets me catch those errors with try/except instead of checking the status code by hand every time. Without it, a failed request would silently continue.
+
+**Q3 — Bearer token vs Basic Auth:** A Bearer token is a single secret string you send in the Authorization header to prove who you are. Basic Auth instead sends a username and password (encoded) with every request. Bearer tokens are safer and easier to revoke — you can delete one token without changing your password.
+
+**Q4 — os.getenv("KEY", "") vs os.environ["KEY"]:** os.getenv("KEY", "") returns the value if it exists, or a default ("") if it doesn't — it never crashes. os.environ["KEY"] raises a KeyError if the variable isn't set. Using getenv with a default makes the script safer when a variable might be missing.
