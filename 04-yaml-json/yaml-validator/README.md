@@ -261,7 +261,27 @@ python3 -c "import yaml; yaml.safe_load(open('broken/compose.yaml'))"
 ## Write-up
 
 **How many bugs did I find before using yamllint?**
+I found seven by reading the files. yamllint and PyYAML then pointed to the indentation errors, the missing colons, and the tab. The tab was invisible: when I copied the file from the README, it was turned into spaces, so I had to add it myself and use `cat -A` to see it.
 
 **Which bug was hardest to spot and why?**
+The tab character before `DOCKER_PASS`. It looks the same as spaces in an editor, and my copy-paste removed it at first. The broken JSON quote inside the Slack payload was also hard, because YAML treats that block as plain text, so no YAML tool can see it.
 
 **What would I add to a pre-commit hook to catch these automatically?**
+`yamllint` for syntax and indentation, `actionlint` for GitHub Actions workflows, `docker compose config` for the Compose file, `kubeconform` for Kubernetes manifests, and an `.editorconfig` with `indent_style = space` to stop tabs.
+
+---
+
+## Guided questions — answers
+
+**Q1 — Why does YAML forbid mixing tabs and spaces?**
+YAML uses indentation to decide nesting. A tab can be shown as 2, 4 or 8 spaces depending on the editor, so the same file could mean different structures. The YAML spec therefore requires spaces for indentation and does not allow tabs there.
+
+**Q2 — yamllint found 3 errors but there are 8 bugs. Why might a linter miss bugs?**
+A linter checks syntax and style rules. Several bugs here are valid YAML but wrong in meaning: `python-version` placed outside `with`, a broken JSON quote inside a `|` block, extra spaces inside a block scalar. YAML does not know what GitHub Actions expects, and it treats a `|` block as plain text. Also, a parser stops at the first syntax error, so later bugs are hidden until the first is fixed.
+
+**Q3 — Syntax error vs semantic error?**
+A syntax error breaks the YAML rules themselves, so no parser can read the file. Example: the tab, or `if github.always()` without a colon. A semantic error is valid YAML, but wrong for the tool that reads it. Example: `imagePullSecrets: name: ...` is valid YAML, but Kubernetes expects a list, so `kubectl` rejects it.
+
+**Q4 — Which tool validates each one against its own schema?**
+GitHub Actions: `actionlint`. Kubernetes: `kubeconform` (or `kubectl apply --dry-run=client`). Docker Compose: `docker compose config`.
+EOF

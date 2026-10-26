@@ -1,0 +1,57 @@
+---
+version: "3.9"
+
+services:
+  web:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./html:/usr/share/nginx/html
+    networks:
+      - frontend
+    depends_on:
+      api:
+        condition: service_healthy
+
+  api:
+    build: ./api
+    environment:
+      DATABASE_URL: postgres://user:pass@db:5432/mydb
+      DEBUG: "false"
+    ports:
+      - "8080:8080"
+    networks:
+      - frontend
+      - backend
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: mydb
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+networks:
+  frontend:
+  backend:
+
+volumes:
+  db_data:

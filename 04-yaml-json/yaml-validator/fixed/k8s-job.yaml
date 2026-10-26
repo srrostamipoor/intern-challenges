@@ -1,0 +1,29 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migration
+  namespace: production
+spec:
+  ttlSecondsAfterFinished: 100
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrator
+          image: myapp:1.0.0
+          command: ["python", "manage.py", "migrate"]
+          env:
+            - name: DATABASE_URL
+              value: "postgres://user:pass@db:5432/mydb"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+      imagePullSecrets:
+        - name: registry-secret
+  backoffLimit: 3
+  activeDeadlineSeconds: 300

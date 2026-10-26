@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migration
+  namespace: production
+spec:
+  ttlSecondsAfterFinished: 100
+  template:
+    spec:
+      restartPolicy: Never    # correct for a Job
+      containers:
+        - name: migrator
+          image: myapp:1.0.0
+          command: ["python", "manage.py", "migrate"]
+          env:
+            - name: DATABASE_URL
+              value: "postgres://user:pass@db:5432/mydb"
+          resources:
+            requests:
+              memory: 128Mi   # BUG 1: missing quotes — memory values should be "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: 500m       # BUG 2: cpu limit missing quotes — inconsistent with requests
+      imagePullSecrets:
+        name: registry-secret  # BUG 3: should be "- name:" (list item), not "name:"
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+
+# BUG 4: A Job's pod template must have spec.restartPolicy set to Never or OnFailure.
+#         This file has it correct but it's nested under spec.template.spec — verify
+#         that it is NOT accidentally placed under spec directly (a common mistake).
+#         Write a note explaining where restartPolicy belongs and why.
