@@ -32,6 +32,32 @@ Hands-on, implementation-based challenges completed as part of my DevOps interns
   - `yaml-validator/` — Challenge 17: Find and fix bugs in broken YAML files
   - `github-actions-pipeline/` — Challenge 18: Real CI pipeline — lint → test → build → push → notify
 
+## Phase 3 — Core DevOps Tooling
+
+- `05-containers/`
+  - `dockerfile-basics/` — Challenge 19: Write your first Dockerfile
+  - `layers-and-cache/` — Challenge 20: Layers, cache, and image size
+  - `volumes-and-mounts/` — Challenge 21: Volumes and bind mounts
+  - `container-networking/` — Challenge 22: Container networking
+  - `compose-multi-service/` — Challenge 23: Docker Compose multi-service app
+  - `compose-secrets/` — Challenge 24: Compose secrets and config management
+  - `container-healthchecks/` — Challenge 25: Container health checks
+  - `docker-cleanup/` — Challenge 26: Docker cleanup and resource management
+- `06-cicd/`
+  - `pipeline-stages/` — Challenge 27: lint → test → build → deploy, and why that order matters
+  - `triggers/` — Challenge 28: push, PR, schedule, and manual triggers
+  - `secrets-in-ci/` — Challenge 29: secrets management in CI — never hardcoding credentials
+  - `artifact-management/` — Challenge 30: build once, promote through environments
+  - `pipeline-caching/` — Challenge 31: speeding up pipelines with dependency caching
+  - `full-deploy-pipeline/` — Challenge 32: test on PR, auto-deploy on merge to main
+- `07-iac/`
+  - `tf-basics/` — Challenge 33: Terraform providers, resources, and state files
+  - `tf-variables-modules/` — Challenge 34: variables, outputs, and reusable modules
+  - `tf-plan-apply/` — Challenge 35: plan vs apply, state locking, drift detection
+  - `ansible-playbooks/` — Challenge 36: Ansible playbooks, inventories, and idempotency
+  - `ansible-roles/` — Challenge 37: roles, templates, handlers, and structure
+  - `tf-ansible-combo/` — Challenge 38: Terraform provisions, Ansible configures — the full combo
+
 ---
 
 ## Progress
@@ -57,6 +83,32 @@ Hands-on, implementation-based challenges completed as part of my DevOps interns
 - [ ] Challenge 16 — K8s manifests by hand
 - [ ] Challenge 17 — YAML debugger
 - [ ] Challenge 18 — GitHub Actions pipeline
+
+### Phase 3 — Docker
+- [ ] Challenge 19 — Dockerfile basics
+- [ ] Challenge 20 — Layers, cache, and image size
+- [ ] Challenge 21 — Volumes and bind mounts
+- [ ] Challenge 22 — Container networking
+- [ ] Challenge 23 — Docker Compose multi-service app
+- [ ] Challenge 24 — Compose secrets and config management
+- [ ] Challenge 25 — Container health checks
+- [ ] Challenge 26 — Docker cleanup and resource management
+
+### Phase 3 — CI/CD
+- [ ] Challenge 27 — Pipeline stages
+- [ ] Challenge 28 — Triggers
+- [ ] Challenge 29 — Secrets management in CI
+- [ ] Challenge 30 — Artifact management
+- [ ] Challenge 31 — Pipeline caching
+- [ ] Challenge 32 — Full deploy pipeline
+
+### Phase 3 — Infrastructure as Code
+- [ ] Challenge 33 — Terraform basics
+- [ ] Challenge 34 — Terraform variables and modules
+- [ ] Challenge 35 — Terraform plan, apply, and drift
+- [ ] Challenge 36 — Ansible playbooks and inventories
+- [ ] Challenge 37 — Ansible roles and idempotency
+- [ ] Challenge 38 — Terraform + Ansible combo
 
 ---
 
