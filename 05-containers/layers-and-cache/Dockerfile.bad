@@ -1,0 +1,10 @@
+# BAD: starts from the full (fat) base image
+FROM python:3.11
+
+# BAD: copies everything in one go, any file change busts the pip install layer
+COPY . /app
+WORKDIR /app
+
+RUN pip install -r requirements.txt
+
+CMD ["python", "app.py"]

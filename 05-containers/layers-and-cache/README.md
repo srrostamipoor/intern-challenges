@@ -147,32 +147,46 @@ Record the sizes you measured in your write-up. Explain *why* each one is the si
 ---
 ## Write-up
 
-*(Fill this in after completing the challenge.)*
-
 **Image sizes I measured:**
 
-| Image | Size |
-|---|---|
-| app:bad | |
-| app:good | |
-| app:multistage | |
+| Image | Size (disk) | Content size |
+|---|---|---|
+| app:bad | 1.62 GB | 417 MB |
+| app:good | 222 MB | 53.4 MB |
+| app:multistage | 195 MB | 47.3 MB |
+
+**Why each one is that size:**
+`app:bad` is built on the full `python:3.11` image, which is already about 1.62 GB by itself, so almost all of its size comes from the fat base image; my small Flask app adds very little. `app:good` uses `python:3.11-slim` and `--no-cache-dir`, so it is about 7 times smaller. `app:multistage` installs the packages in a builder stage and copies only the installed packages into a clean slim image, and it is a little smaller than `app:good` (195 MB vs 222 MB). The difference is small because my app is small and the slim image already has no build tools; multistage builds make a bigger difference when the build needs heavy tools such as compilers.
+
+**Cache test:**
+After changing only `app.py`:
+- `app:good` rebuilt in 2.7 s, and the `pip install` layer showed `CACHED`.
+- `app:multistage` rebuilt in 2.6 s, and all builder layers showed `CACHED`.
+- `app:bad` rebuilt in 37 s, because `COPY . /app` comes before `pip install`, so the pip layer was invalidated and the packages were installed again (34 s).
+
+(Times depend on my network speed, so they are only for comparison inside the same setup.)
 
 **What I struggled with:**
+My first builds failed at `pip install` with "Temporary failure in name resolution". The problem was not the Dockerfile but DNS on my network, and the build worked again after my connection recovered. Later, `build.sh` failed in WSL with `\r: command not found` because the file had Windows (CRLF) line endings, and then with "docker not found" because Docker Desktop WSL integration was not enabled. After converting the file to LF and enabling WSL integration, `build.sh` built all three images and printed the same sizes I measured by hand.
 
 **What I'd do differently:**
+I would pin the base image version, add a `.dockerignore` from the start, and use a multi-stage build when the project needs build tools. I would also check my network and DNS first when a build fails during `pip install`.
 
 ---
 
 ## Guided questions — answers
 
-*(Fill these in after completing the challenge.)*
-
 **Q1 — What is a layer:**
+A layer is a read-only snapshot of the file changes made by one instruction in the Dockerfile (for example `COPY` or `RUN`). An image is a stack of these layers. Docker stores them on the host in its own storage area (for example `/var/lib/docker` with the overlay2 driver). On Docker Desktop for Windows, this location is inside Docker's Linux virtual machine, not in a normal Windows folder.
 
 **Q2 — Cache busting cascade:**
+When a layer changes and its cache is invalidated, every layer after it is invalidated too and must be rebuilt, even if those later instructions did not change. In my test, changing `app.py` invalidated `COPY . /app` in `app:bad`, so the `pip install` layer after it ran again.
 
 **Q3 — requirements.txt first:**
+Dependencies change rarely and the source code changes often. If I copy only `requirements.txt` and run `pip install` first, that layer stays cached when I edit the code, so a rebuild skips the slow install. In my test, `app:good` rebuilt in 2.7 s, while `app:bad` took 37 s because it installed the packages again.
 
 **Q4 — COPY --from=builder:**
+It copies files from an earlier build stage instead of from my computer. In the multi-stage build, the builder installs the packages into `/install`, and the final stage copies only that folder into `/usr/local`. The final image does not contain the builder stage's extra files (temporary files and anything else created there), so it is smaller.
 
 **Q5 — --no-cache always:**
+`--no-cache` makes Docker ignore all cached layers and rebuild everything from scratch. That makes every build slower and wastes the layer caching that we designed the Dockerfile for. It also does not make a build safer, because stale or wrong content is better fixed with a correct layer order and pinned versions. A better way is to use the cache normally and bypass it only when needed (for example with `--pull` to get a fresh base image, or by changing the file that should invalidate the layer).
