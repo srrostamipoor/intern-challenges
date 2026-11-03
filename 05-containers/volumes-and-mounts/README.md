@@ -180,26 +180,40 @@ docker volume rm visit-data
 ---
 ## Write-up
 
-*(Fill this in after completing the challenge.)*
-
 **What I built:**
+A small Flask visit counter that stores its count in `/data/visits.txt`, packaged in a Docker image (`visit-counter:1.0`). I ran it three ways to see what happens to the data when the container is removed: with no mount, with a bind mount, and with a named volume. I also wrote `run.sh`, which runs all three demos in one command.
+
+**What I observed:**
+
+| Demo | First container | After `docker rm` and a new container |
+|---|---|---|
+| 1. No mount | visits: 1, 2 | visits: 1 (data lost) |
+| 2. Bind mount (`local-data`) | visits: 1, 2 (the file on my host contained `2`) | visits: 3 (data kept) |
+| 3. Named volume (`visit-data`) | visits: 1 | visits: 2 (data kept) |
+
+`docker volume inspect visit-data` showed the mountpoint `/var/lib/docker/volumes/visit-data/_data`. On Docker Desktop for Windows this path is inside Docker's Linux virtual machine, not a normal Windows folder.
 
 **What I struggled with:**
+At first my `curl` right after `docker run` returned "Empty reply from server", because Flask was not ready yet; waiting a few seconds fixed it, so I added `sleep 3` in `run.sh`. Notepad also saved my Dockerfile as `Dockerfile.txt`, so Docker could not find it until I renamed it. My first run of `run.sh` failed with `\r: command not found`, because the file had Windows (CRLF) line endings; converting it to LF fixed it.
 
 **What I'd do differently:**
+I would use a healthcheck or a wait loop instead of a fixed `sleep`, use named volumes for anything important such as databases, and add a backup script for the volume.
 
 ---
 
 ## Guided questions — answers
 
-*(Fill these in after completing the challenge.)*
-
 **Q1 — volume survives rm:**
+Yes, the data survives. `docker rm` removes the container, but a named volume is a separate object managed by Docker and is only deleted with `docker volume rm`. In my demo 3, the counter went from 1 to 2 after I removed the container and started a new one with the same volume.
 
 **Q2 — bind vs named volume syntax:**
+In a bind mount the left side of `-v` is a path on the host (for example `./local-data:/data`), so I choose where the data lives. In a named volume the left side is only a name (`visit-data:/data`) and Docker decides where to store it. Docker knows which is which by looking at the left side: a path means bind mount, a plain name means named volume.
 
 **Q3 — bind mounts in dev vs prod:**
+In development, a bind mount is useful because I can edit files on my computer and the container sees the change immediately, with no rebuild. In production it is dangerous because the container depends on a specific folder of the host, the files can be changed or deleted from outside, the container may be able to write into the host filesystem, and it is not portable to another server.
 
 **Q4 — where Docker stores volumes:**
+On a Linux host, Docker stores a named volume under `/var/lib/docker/volumes/<name>/_data`. `docker volume inspect <name>` shows this path in the `Mountpoint` field. On Docker Desktop for Windows, the path is inside Docker's Linux virtual machine.
 
 **Q5 — db container deleted, data?:**
+The data is still in the named volume, which stays on the host after the container is deleted. I can start a new database container with the same volume and it will see the old data, until I remove the volume with `docker volume rm`.
