@@ -246,26 +246,75 @@ curl -s http://localhost:8080/messages   # messages still there
 ---
 ## Write-up
 
-*(Fill this in after completing the challenge.)*
-
 **What I built:**
+A four-service stack defined in one `compose.yaml`: nginx (the only public
+service, port 8080), a Flask API, PostgreSQL 16 and Redis 7. The API stores
+messages in Postgres and caches the list in Redis for 30 seconds; a POST
+clears the cache. Database credentials come from a `.env` file that is
+git-ignored, and a `.env.example` is committed instead. Postgres data lives
+in a named volume.
+
+I tested it end to end: the first GET returned `source: db`, the second
+`source: cache`, and a new POST made the next GET read from the db again.
+After `docker compose down` and `up -d` the messages were still there; after
+`docker compose down -v` the list was empty.
 
 **What I struggled with:**
+- `curl -d '{"text": ...}'` breaks the JSON quotes in PowerShell, so I used
+  `Invoke-RestMethod` instead.
+- My phone hotspot had DNS problems and `pip install` retried a few times
+  during the first build, but it finished.
+- Understanding that `depends_on` only controls start order, not readiness.
 
 **What I'd do differently:**
+- Add a `pg_isready` healthcheck to Postgres and use
+  `depends_on: condition: service_healthy`.
+- Use two networks (frontend and backend) so nginx cannot reach the database.
+- Add a `.gitignore` before the first commit (I did this one first).
 
 ---
 
 ## Guided questions — answers
 
-*(Fill these in after completing the challenge.)*
-
 **Q1 — depends_on vs actually ready:**
+No. `depends_on` only waits until the container has *started*
+(`condition: service_started`, which I saw in `docker compose config`).
+Postgres needs some seconds after that (initdb on a fresh volume, recovery)
+before it accepts connections, so the API could get connection errors during
+that window. My app only connects on the first request, so I did not see an
+error in my test, but the race exists. The proper fix is a healthcheck with
+`pg_isready` plus `depends_on: postgres: condition: service_healthy`, and
+retry logic in the app as a second layer.
 
 **Q2 — restart: unless-stopped:**
+It tells Docker to restart the container automatically if it crashes (exits
+with an error) and also when the Docker daemon starts again, for example
+after a reboot. It does not restart a container that I stopped manually
+(`docker stop`, `docker compose stop` or `down`). Compared to `always`, the
+manual stop is respected.
 
 **Q3 — .env vs environment::**
+Compose reads `.env` only to substitute `${VAR}` inside `compose.yaml`; it
+does not copy the file into the containers. This is deliberate: each service
+receives only the variables it needs (for example, nginx and redis get none),
+which limits exposure of secrets. To pass everything at once, use
+`env_file: - .env` on a service, but then it also gets variables it does not
+need.
 
 **Q4 — compose down keeps volumes:**
+Containers are disposable and can be recreated at any time, but the data in
+volumes is not, so `down` removes only the containers and network and keeps
+the data. I confirmed this: after `down` and `up` my two messages were still
+there. I would use `-v` when I want a clean start, for example resetting a
+development database. The risk is permanent data loss with no undo: after
+`down -v` my list went from two messages to empty. On a production database
+it could destroy real data.
 
 **Q5 — nginx can reach postgres?:**
+Nothing prevents it in this setup. All four services are on the same
+`backend` network, so any container can resolve and reach any other one. I
+checked it: `docker compose exec nginx sh -c "nc -zv postgres 5432"` printed
+`open`. Only the published port (`8080:80` on nginx) limits access from the
+host, not from other containers. To really isolate the database I would
+create two networks: `frontend` (nginx and api) and `backend` (api, postgres
+and redis). Then nginx has no route to postgres.
