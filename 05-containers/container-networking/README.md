@@ -203,26 +203,38 @@ Note the containers, their IPs, and the network subnet.
 ---
 ## Write-up
 
-*(Fill this in after completing the challenge.)*
-
 **What I built:**
+Three containers on a custom bridge network called `app-net`: Redis (a counter store), a Flask API that increments a counter in Redis, and Nginx as a reverse proxy. Only Nginx has a published port (`-p 8080:80`); Redis and the API have no host ports. I started everything by hand first, and then wrote `up.sh` and `down.sh` to start and remove everything in the right order.
+
+**What I observed:**
+- `docker ps` showed a host port mapping (`0.0.0.0:8080->80/tcp`) only for `nginx`; `api` and `redis` only showed their internal ports.
+- From the host, `Test-NetConnection localhost -Port 6379` gave `TcpTestSucceeded : False`, and a request to the API's container IP (`172.19.0.3:8080`) timed out.
+- `curl http://localhost:8080/` went through Nginx to the API and Redis, and the counter increased on every request.
+- A container started without `--network app-net` could not resolve the name `api` (`wget: bad address 'api:8080'`).
+- `docker exec nginx nslookup api` used the DNS server `127.0.0.11` and resolved `api` to `172.19.0.3`.
+- `docker network inspect app-net`: subnet `172.19.0.0/16`, gateway `172.19.0.1`, containers `redis` = `172.19.0.2`, `api` = `172.19.0.3`, `nginx` = `172.19.0.4`.
 
 **What I struggled with:**
+The challenge's example used `docker exec api curl`, but the `python:3.11-slim` image has no `curl`, so I used a short Python command with `urllib` instead. `redis-cli` is also not installed on Windows, so I used `Test-NetConnection` to prove that the Redis port is closed from the host. I also first tested the API's IP with a wrong example address (`172.18.0.3`) instead of my real one (`172.19.0.3`), which proved nothing until I used the real IP from `docker inspect`.
 
 **What I'd do differently:**
+I would put Redis and the API on a separate internal network that Nginx is not part of, add a named volume for Redis data (the counter is lost if the Redis container is removed), and use Docker Compose instead of shell scripts.
 
 ---
 
 ## Guided questions — answers
 
-*(Fill these in after completing the challenge.)*
-
 **Q1 — forgot --network on Redis:**
+Redis would start on the default bridge network instead of `app-net`, so the API could not reach it. The name `redis` would not resolve, because the default bridge network has no name-based DNS between containers; I saw the same behavior when a container outside `app-net` could not resolve `api` (`bad address`).
 
 **Q2 — how "redis" hostname resolves:**
+Docker runs a built-in DNS server (at `127.0.0.11` inside each container) for user-defined networks. When the API looks up `redis`, this DNS server returns the IP of the container named `redis` on the same network. I verified it with `docker exec nginx nslookup api`, which returned `172.19.0.3`.
 
 **Q3 — bridge vs host vs none:**
+A bridge network is a private network on the host: each container gets its own IP, containers on the same bridge can talk to each other, and ports are only reachable from outside if I publish them with `-p`. A host network removes the isolation: the container shares the host's network stack, so its ports are directly on the host and `-p` is not needed. A none network gives the container no network at all except the loopback interface.
 
 **Q4 — Redis recreated, API restart?:**
+No, in my test the API did not need a restart. The API only knows the name `redis`, not an IP address, and Docker's DNS resolves that name to whatever container currently has it, so after I removed and recreated the Redis container, the next request worked immediately and the Redis client reconnected on its own. However, the counter went back to 1, because Redis kept its data inside the removed container; to keep the data I would need to mount a named volume for Redis.
 
 **Q5 — Nginx reaches internal API:**
+Nginx and the API are on the same network (`app-net`), so Nginx talks to the API directly using the name `api` and the API's internal port 8080. The `-p` option only publishes a port to the host; traffic between containers on the same network does not go through the host's published ports, so the API does not need one.
