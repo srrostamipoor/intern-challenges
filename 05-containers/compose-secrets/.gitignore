@@ -1,0 +1,11 @@
+# Secrets - NEVER commit these
+.env
+secrets/*.txt
+secrets/*.key
+secrets/*.pem
+
+# But keep the directory itself
+!secrets/.gitkeep
+
+__pycache__/
+*.pyc

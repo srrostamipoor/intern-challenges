@@ -222,26 +222,103 @@ docker inspect compose-secrets-api-1 | grep -i password
 ---
 ## Write-up
 
-*(Fill this in after completing the challenge.)*
-
 **What I built:**
+The Challenge 23 stack (nginx, Flask API, PostgreSQL, Redis) hardened against
+secret leakage. The database password now lives in `secrets/db_password.txt`,
+which is git-ignored (`secrets/*.txt`, with `!secrets/.gitkeep` to keep the
+folder). Compose mounts it into `postgres` and `api` as a Docker secret at
+`/run/secrets/db_password`. Postgres reads it through
+`POSTGRES_PASSWORD_FILE`, and the API reads it with `read_secret()`, which
+falls back to an environment variable. `.env` now contains only `DB_NAME` and
+`DB_USER`, and `.env.example` documents the keys without real values. I also
+wrote `secrets_audit.py`, a script that walks the project and reports risky
+patterns.
+
+**What I observed:**
+- POST and GET through nginx worked, so the password from the file is the same
+  on both sides.
+- `docker compose exec api ls -l /run/secrets` showed
+  `-rwxrwxrwx root root 19 db_password` (19 bytes, no trailing newline).
+- `docker inspect` of the api container never contained the password value
+  (searching for `supersecret` returned nothing). Searching for the word
+  `password` only matched the mount path `db_password.txt`. For postgres it
+  showed `POSTGRES_PASSWORD_FILE=/run/secrets/db_password`, which is a path,
+  not the secret.
+- For comparison, a container started with `-e DB_PASSWORD=supersecretpassword`
+  showed `"DB_PASSWORD=supersecretpassword"` in `docker inspect`.
+- `secrets_audit.py` reported 2 false positives in `api/app.py`
+  (`DB_PASSWORD = read_secret(...)` and `password=DB_PASSWORD,`) because the
+  regex matches the word `password` followed by `=` even when the value is a
+  variable. It did catch a fake leak (`password = hunter2` in a test file) and
+  exited with code 1.
 
 **What I struggled with:**
+- The first builds failed with `Temporary failure in name resolution` and a
+  `ReadTimeoutError` while pip downloaded `psycopg2-binary` over a weak
+  connection. I fixed it with `pip install --default-timeout=120 --retries 10`
+  in the Dockerfile.
+- On Windows, `echo "..." > file` writes UTF-16, and the default newline
+  (`\r\n`) would end up in the password. I created the file with
+  `Set-Content -Encoding ascii -NoNewline` and checked that its length is
+  exactly 19 bytes.
+- Understanding that a secret is still readable by anyone who can run
+  `docker exec`; it only keeps the value out of Git, the YAML, `inspect` and
+  logs.
 
 **What I'd do differently:**
+- Make the audit regex stricter (only flag quoted literal values) or add an
+  allow-list to remove the false positives.
+- Run `secrets_audit.py` as a pre-commit hook or in the CI pipeline, since it
+  exits with code 1 when it finds something.
+- Add a Postgres healthcheck and use a real secret store (Vault, cloud secret
+  manager) outside local development.
 
 ---
 
 ## Guided questions — answers
 
-*(Fill these in after completing the challenge.)*
-
 **Q1 — where secrets are mounted:**
+Docker mounts each secret as a file at `/run/secrets/<name>`, here
+`/run/secrets/db_password`, and only into the services that list it under
+`secrets:` (redis and nginx do not get it). In my test (Docker Desktop on
+Windows, plain Compose) the file showed `-rwxrwxrwx root root`, because in
+standalone Compose a file-based secret is a bind mount of the host file, so the
+permissions come from that file rather than from Docker. In Swarm, secrets are
+kept in memory (tmpfs) and are read-only for the container (the documented
+default mode is 0444). The point of a file is that it does not appear in
+`docker inspect`, is not inherited as an environment variable by child
+processes, and can be protected with file permissions.
 
 **Q2 — POSTGRES_PASSWORD_FILE:**
+It is not the Postgres server that understands `_FILE`; it is the official
+image's entrypoint script (`docker-entrypoint.sh`). For variables such as
+`POSTGRES_PASSWORD` it has a helper (`file_env`) that checks whether
+`POSTGRES_PASSWORD_FILE` is set, reads the file content into
+`POSTGRES_PASSWORD`, and refuses to start if both are set. I confirmed the
+helper exists with `grep file_env` inside the container.
 
 **Q3 — docker inspect env var risk:**
+`docker inspect` prints every environment variable of a container in clear
+text, so anyone who can run Docker commands (or read a saved inspect output
+or a support bundle) sees the password. I reproduced it: a container started
+with `-e DB_PASSWORD=supersecretpassword` showed the value in `inspect`, while
+my api container with a secret did not. Plain env vars are also easy to leak
+through logs, crash reports and child processes, and if they are written in
+`compose.yaml` they end up in Git.
 
 **Q4 — secrets in production (K8s/Swarm):**
+In Docker Swarm, secrets are stored encrypted in the cluster's Raft log,
+sent only to the nodes that run a service that needs them, and mounted in
+memory. In Kubernetes, Secret objects are stored in etcd (only base64-encoded
+unless encryption at rest is enabled), access is controlled with RBAC, and
+they are mounted as files or env vars in pods. Often an external secret
+manager (Vault, a cloud provider's secret manager) is used on top, which adds
+access control, auditing and rotation. A password file on a developer's disk,
+like mine, has none of these.
 
 **Q5 — read_secret() env var fallback:**
+`read_secret("db_password")` first looks for `/run/secrets/db_password`, and
+if it does not exist it reads the env var `DB_PASSWORD`. This lets me run
+`app.py` outside Docker (on my laptop, in unit tests or in CI) by exporting an
+environment variable, without changing code. It should be used only for
+development, because env vars are less safe than a mounted secret.
