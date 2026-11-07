@@ -206,26 +206,97 @@ before the API is ready. That's the problem `depends_on` with health conditions 
 ---
 ## Write-up
 
-*(Fill this in after completing the challenge.)*
-
 **What I built:**
+A small Flask API whose health I can control (`/health`, `/break`, `/fix`) and
+a Compose stack with two services. The `api` image has a `HEALTHCHECK` in the
+Dockerfile (`curl -f http://localhost:8080/health`, every 15s, 3s timeout, 10s
+start period, 3 retries), and the same check is repeated in `compose.yaml`.
+A `worker` service uses `depends_on: api: condition: service_healthy`, so it
+only starts after the API is healthy.
+
+**What I observed:**
+- `docker compose up --build -d` printed `api Healthy` and then
+  `worker Started`, both at about 6.2s. That is earlier than the 15s interval,
+  which I believe is because Docker checks more often during the start period
+  (the start interval).
+- After `/break`, `FailingStreak` grew 1, 2, 3 and the status stayed `healthy`
+  until the third failure; then it became `unhealthy` (about 30-45s after
+  `/break`, matching 3 failures x 15s). The container stayed `Up` the whole
+  time and the worker was not touched; Docker only changes the label.
+- The health log showed `exit=22` and `curl: (22) The requested URL returned
+  error: 503`.
+- After `/fix`, the status returned to `healthy` (streak 0) in about 20s, one
+  successful check was enough.
+- Without `condition: service_healthy` (tested on a temporary copy of the
+  file), `worker` started in 0.7s, before the API (1.1s), and `docker compose
+  ps` showed the API still as `health: starting`. The worker's log said "API is
+  healthy" even though that was not true yet.
+- Inside the API container: `curl -s` on `/health` while broken printed the 503
+  JSON body and returned `exit=0`; `curl -sf` printed nothing and returned
+  `exit=22`.
 
 **What I struggled with:**
+- My `requirements.txt` was saved empty (0 bytes), which would have installed
+  nothing in the image; I noticed it in the `dir` output before building.
+- `watch` does not exist in PowerShell, so I used a loop with
+  `Start-Sleep` and `docker inspect --format`.
+- The container name in the challenge text (`compose-healthchecks-api-1`)
+  does not match my folder name, so I used `docker inspect (docker compose ps
+  -q api)` instead of guessing the name.
+- `curl` is not in `python:3.11-slim`, so installing it with `apt-get` added
+  22 packages (about 15 MB) just for the health check.
 
 **What I'd do differently:**
+- Use a small Python health check script instead of installing `curl`, to keep
+  the image smaller.
+- Split the endpoints into a cheap `/health` (liveness) and a `/ready` that
+  checks dependencies (readiness).
+- Add a real dependency (Postgres) with its own `pg_isready` healthcheck.
 
 ---
 
 ## Guided questions — answers
 
-*(Fill these in after completing the challenge.)*
-
 **Q1 — running vs healthy:**
+`running` only means the main process of the container is alive. `healthy`
+means the health check command succeeds, i.e. the application actually
+answers. An app can hang or return errors while its process is still running;
+I saw this when the container stayed `Up` but was `unhealthy` after `/break`.
+Kubernetes and Compose `depends_on` care because routing traffic or starting a
+dependent service when the app is only "running" causes errors like the 502s
+in the scenario. In my test, without `service_healthy` the worker started
+while the API was still `health: starting`.
 
 **Q2 — K8s liveness vs readiness probe failures:**
+When a liveness probe fails the configured number of times (three by
+default), the kubelet kills the container and restarts it, which is meant for
+applications that are stuck. When a readiness probe fails, the container is
+not restarted; the pod is only removed from the Service's endpoints so it gets
+no traffic, and it is added back when the probe succeeds again. (I did not run
+Kubernetes here; in plain Docker, `unhealthy` is only a label and nothing
+restarts the container, which I saw directly.)
 
 **Q3 — start-period for slow apps:**
+Slow-starting apps, for example ones that run database migrations, cannot
+answer the check during their first seconds. During `--start-period`, failed
+checks do not count towards `--retries`, so the container is not marked
+`unhealthy` (or, in orchestrators, restarted) before it had a chance to start.
+A successful check during that period marks it healthy immediately.
 
 **Q4 — curl -f flag:**
+`-f` (`--fail`) makes curl exit with a non-zero code (22) when the server
+returns an HTTP error (400 or above). Without it, curl prints the error body
+and exits with 0. I tested it while the API was broken: `curl -s` returned the
+503 JSON body with `exit=0`, `curl -sf` returned nothing with `exit=22`. Since
+Docker only looks at the exit code, a check without `-f` would report the
+container as healthy while the app is returning errors.
 
 **Q5 — health check hitting DB:**
+Usually not a good idea for the main (liveness) check. If the database is slow
+or down, every replica fails its check at the same time and gets restarted,
+which does not fix the database and can make things worse; it also adds load
+to the database on every check. A better pattern is to keep `/health` cheap
+(only "the process responds") and add a separate `/ready` endpoint that checks
+dependencies, used for readiness so a failure only stops traffic instead of
+restarting the container. The result of a dependency check can also be cached
+for a few seconds.
