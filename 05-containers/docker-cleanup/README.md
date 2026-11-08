@@ -202,35 +202,105 @@ Record the before/after disk usage numbers in your write-up.
 ---
 ## Write-up
 
-*(Fill this in after completing the challenge.)*
-
 **Before/after disk usage I measured:**
+
+Measured with `docker system df`: "before" is right after `make_mess.sh`,
+"after" is right after `cleanup.sh` (answering `yes` to the volume prompt).
 
 | Resource | Before | After |
 |---|---|---|
-| Images | | |
-| Containers | | |
-| Volumes | | |
-| Build cache | | |
+| Images | 23 (12 active), 4.987 GB, 633.4 MB reclaimable | 22 (2 active), 4.987 GB, 2.887 GB reclaimable (57%) |
+| Containers | 26 (2 active), 1.272 GB | 2 (2 active), 237.6 kB |
+| Volumes | 14 (1 active), 96.59 MB | 5 (1 active), 96.59 MB |
+| Build cache | 92 entries, 2.442 GB | 42 entries, 2.211 GB |
+
+What each step actually freed: containers 1.272 GB (23 stopped containers),
+dangling image 11 kB, volumes 356 B (9 anonymous volumes), build cache
+230.7 MB. Networks `orphan-net-1`, `orphan-net-2` and `intern-net` were
+removed. I only looked at `docker system df`, not at the free space on
+Windows.
 
 **What `docker system prune -a --volumes` deletes:**
+Everything not in use, in one command: all stopped containers, all networks
+not used by a container, all images not used by at least one container (not
+just dangling ones, because of `-a`), unused build cache, and unused
+volumes. In my Docker version `docker system prune --help` says
+`--volumes  Prune anonymous volumes`, so named volumes are kept unless
+`docker volume prune --all` is used. It is meant only for development
+machines; on a production host or a CI server it would delete cached layers
+and images that are needed.
 
 **What I struggled with:**
+- The challenge's `cleanup.sh` prunes everything on the machine, not only the
+  junk from `make_mess.sh`. My laptop had about 20 other stopped containers
+  from earlier challenges, so before running it I decided to accept that
+  loss and copied the files of the one container I cared about
+  (`devops-practice`) to a backup folder with `docker cp`. The copy gave a
+  symlink error for a `.venv` folder (Windows cannot create symlinks without
+  extra rights), but the other files were copied.
+- The list shown before the volume prompt (`docker volume ls --filter
+  dangling=true`) had 13 volumes, but `docker volume prune` removed only the
+  9 anonymous ones and kept the 4 named ones, so the list and the action did
+  not match.
+- I expected the first `dangling-test` build to become a dangling image, but
+  the only unnamed image was the old `hello-world` that I replaced with a new
+  pull. I do not know exactly why; it may be how this Docker Desktop stores
+  images.
 
 **What I'd do differently:**
+- Put a label on the junk resources and prune only those
+  (`--filter "label=..."`), so the script is safe on a machine with other
+  work on it.
+- Use `docker image prune -a --filter "until=..."` on a schedule instead of
+  removing everything, and keep the build cache that is useful.
+- Make the dry-run listing match what prune will really do (for example,
+  list only anonymous volumes).
+
+I also added a `--dry-run` option to `cleanup.sh` (a stretch goal): it
+prints what would be removed and deletes nothing.
 
 ---
 
 ## Guided questions — answers
 
-*(Fill these in after completing the challenge.)*
-
 **Q1 — dangling vs unused image:**
+A dangling image has no name or tag (`<none>`), for example an old image
+whose tag moved to a newer build; I saw the old `hello-world` become
+`<untagged>` after pulling a newer one. An unused image has a name but no
+container uses it; after the cleanup my laptop had 20 such images
+(2.887 GB reclaimable, 57%). `docker image prune` removes only dangling ones,
+and `docker image prune -a` removes both. I tested it with a labelled
+`junk-demo` image: plain `prune` reclaimed 0B, `prune -a` deleted it.
 
 **Q2 — build cache 450 MB:**
+The cache is created by `docker build`: BuildKit stores the result of each
+build step so unchanged steps are reused (the `CACHED` lines). It is safe to
+delete; nothing needs it to run, only the next build gets slower because
+steps like `pip install` or `apt-get` run again. On my machine the cache was
+2.442 GB in 92 entries; `docker builder prune` freed 230.7 MB, and the
+remaining 2.2 GB was shown as not reclaimable (probably still linked to
+existing images, I did not verify it).
 
 **Q3 — stopped container logs survive prune?:**
+No. The logs belong to the container, so removing it removes them. I tested
+it: `docker logs log-test` worked, then after `docker container prune` it
+returned `No such container: log-test`. If I need the logs I must save them
+first (`docker logs name > file.txt`).
 
 **Q4 — why volumes need a prompt:**
+Volumes hold persistent data, such as a database, which cannot be rebuilt
+from an image and cannot be restored after deletion. Containers and networks
+can be recreated from their definition, so deleting them is not harmful. I
+also saw that Docker itself is careful with them: from 13 listed volumes
+the prune removed only the 9 anonymous ones and kept the 4 named ones, and
+removing those needs `--all`.
 
 **Q5 — slow CI builds, right vs wrong solution:**
+The right solution is to make the cache survive between builds: keep a
+persistent cache on the runner, or export and import it (for example
+`--cache-to` and `--cache-from` with a registry or the CI's cache), keep
+rarely changing steps early in the Dockerfile, and prune only by age
+(`--filter "until=..."`) on a schedule so the disk does not fill. The wrong
+solutions are wiping everything before every build (`docker system prune -a`
+or `--no-cache`), using runners that start empty with no cache storage, or
+the opposite mistake of never cleaning until the disk is full.
