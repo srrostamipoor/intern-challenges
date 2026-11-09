@@ -75,24 +75,24 @@ Hands-on, implementation-based challenges completed as part of my DevOps interns
 - [x] Challenge 10 — Recovery tools
 
 ### Phase 2
-- [ ] Challenge 11 — Uptime monitor
-- [ ] Challenge 12 — Log parser
-- [ ] Challenge 13 — API health checker
-- [ ] Challenge 14 — Deploy notifier
-- [ ] Challenge 15 — jq workout
-- [ ] Challenge 16 — K8s manifests by hand
-- [ ] Challenge 17 — YAML debugger
-- [ ] Challenge 18 — GitHub Actions pipeline
+- [x] Challenge 11 — Uptime monitor
+- [x] Challenge 12 — Log parser
+- [x] Challenge 13 — API health checker
+- [x] Challenge 14 — Deploy notifier
+- [x] Challenge 15 — jq workout
+- [x] Challenge 16 — K8s manifests by hand
+- [x] Challenge 17 — YAML debugger
+- [x] Challenge 18 — GitHub Actions pipeline
 
 ### Phase 3 — Docker
-- [ ] Challenge 19 — Dockerfile basics
-- [ ] Challenge 20 — Layers, cache, and image size
-- [ ] Challenge 21 — Volumes and bind mounts
-- [ ] Challenge 22 — Container networking
-- [ ] Challenge 23 — Docker Compose multi-service app
-- [ ] Challenge 24 — Compose secrets and config management
-- [ ] Challenge 25 — Container health checks
-- [ ] Challenge 26 — Docker cleanup and resource management
+- [x] Challenge 19 — Dockerfile basics
+- [x] Challenge 20 — Layers, cache, and image size
+- [x] Challenge 21 — Volumes and bind mounts
+- [x] Challenge 22 — Container networking
+- [x] Challenge 23 — Docker Compose multi-service app
+- [x] Challenge 24 — Compose secrets and config management
+- [x] Challenge 25 — Container health checks
+- [x] Challenge 26 — Docker cleanup and resource management
 
 ### Phase 3 — CI/CD
 - [ ] Challenge 27 — Pipeline stages
