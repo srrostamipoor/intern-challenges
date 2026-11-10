@@ -204,26 +204,80 @@ Print all of these in a job step and observe the values for each trigger type.
 ---
 ## Write-up
 
-*(Fill this in after completing the challenge.)*
-
 **What I built:**
+Four GitHub Actions workflows, each showing one kind of trigger. They ran in a
+separate repo because workflows only run from the repository root:
+https://github.com/srrostamipoor/triggers-demo. The files here are a copy.
+
+- `on-push.yaml`: runs on pushes to `main` and `release/**`, ignoring
+  changes that touch only `*.md` or `.gitignore`.
+- `on-pr.yaml`: runs on pull requests to `main`, only for `opened`,
+  `synchronize` and `reopened`.
+- `on-schedule.yaml`: nightly smoke test at 02:00 UTC, also runnable by hand.
+- `on-manual.yaml`: `workflow_dispatch` with inputs (environment choice, image
+  tag, dry-run flag).
+
+What I observed:
+- A push that changed only `README.md` did not run the workflow. A push that
+  changed `app.py` did. A push to `feature/demo` did not run it (not in
+  `branches`). A push that changed both `app.py` and `README.md` ran it.
+- A pull request produced three runs: `opened`, `synchronize` (new commit) and
+  `reopened`. Closing the PR produced no run.
+- The manual workflow showed the input form under Actions > Run workflow, and
+  the dry-run flag changed what the job printed.
 
 **What I struggled with:**
+- The Run workflow button and the new workflow did not show in the Actions
+  sidebar at first; opening `/actions/workflows/<file>.yaml` directly worked.
+- I opened the repo clone too early once (before creating the repo on GitHub),
+  so `git clone` failed and files were created in the wrong folder.
+- Understanding that PR runs use a merge preview (`refs/pull/N/merge`), so the
+  PR's `github.ref` is not `main`.
 
 **What I'd do differently:**
+- Read inputs through `env:` instead of putting `${{ inputs.x }}` directly in
+  `run:`, to avoid script injection. I did this in `on-manual.yaml`.
+- Add `concurrency:` so a new push cancels the previous run.
+- Add a nightly alert if the smoke test fails (httpbin.org can be flaky, so I
+  would use my own endpoint).
+
+**Cron reference:**
+
+| Expression | Meaning |
+|---|---|
+| `0 2 * * *` | Daily at 2:00 AM UTC |
+| `*/15 * * * *` | Every 15 minutes |
+| `0 9 * * 1` | Every Monday at 9:00 AM UTC |
+| `0 0 1 * *` | First day of every month at midnight |
 
 ---
 
 ## Guided questions — answers
 
-*(Fill these in after completing the challenge.)*
-
 **Q1 — paths: vs paths-ignore::**
+`paths:` is the allow list: the workflow runs only if at least one changed file
+matches. It is useful in a monorepo, for example `api/**` for the api pipeline.
+`paths` and `paths-ignore` cannot be used together for the same event; use `!`
+patterns inside `paths` if I need both.
 
 **Q2 — PR security boundary:**
+For pull requests from forks, `pull_request` runs without repository secrets and
+with a read-only `GITHUB_TOKEN`. If it had secrets, anyone could open a PR that
+changes the workflow and sends `${{ secrets.X }}` to their own server. (Running
+with the base branch's context is what `pull_request_target` does, which is
+riskier and should not run untrusted PR code.)
 
 **Q3 — UTC timezone math:**
+`0 9 * * 1` is 09:00 UTC. London in summer is UTC+1, so it runs at 10:00 local
+time (09:00 in winter).
 
 **Q4 — workflow_dispatch vs repository_dispatch:**
+`repository_dispatch` is started by an API call (POST to
+`/repos/OWNER/REPO/dispatches` with an `event_type`), so an external system,
+script or another repo can trigger the pipeline. `workflow_dispatch` is the
+manual button or `gh workflow run`.
 
 **Q5 — mixed paths change:**
+Yes, it runs. `paths-ignore` skips the run only if every changed file matches
+the ignored patterns. With `app.py` changed too, it runs. I tested it with a push
+that changed both files.

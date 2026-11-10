@@ -1,0 +1,25 @@
+---
+name: Nightly Smoke Test
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show context
+        run: |
+          echo "event_name: ${{ github.event_name }}"
+          echo "ref:        ${{ github.ref }}"
+          echo "ref_name:   ${{ github.ref_name }}"
+          echo "sha:        ${{ github.sha }}"
+          echo "actor:      ${{ github.actor }}"
+      - uses: actions/checkout@v4
+      - name: Smoke test
+        run: |
+          echo "Running nightly smoke test at $(date)"
+          curl -f https://httpbin.org/get | jq '.url'
+          

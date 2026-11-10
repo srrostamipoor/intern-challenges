@@ -1,0 +1,21 @@
+---
+name: On Push
+
+on:
+  push:
+    branches:
+      - main
+      - "release/**"
+    paths-ignore:
+      - "**.md"
+      - ".gitignore"
+
+jobs:
+  info:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "Triggered by push to: ${{ github.ref }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Author: ${{ github.actor }}"
+          

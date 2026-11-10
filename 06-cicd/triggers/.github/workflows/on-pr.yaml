@@ -1,0 +1,21 @@
+---
+name: On Pull Request
+
+on:
+  pull_request:
+    branches: [main]
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+jobs:
+  pr-check:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "PR #${{ github.event.pull_request.number }}"
+          echo "From: ${{ github.head_ref }} -> ${{ github.base_ref }}"
+          echo "Trigger type: ${{ github.event.action }}"
+          echo "Event name: ${{ github.event_name }}"
+          

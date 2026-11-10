@@ -1,0 +1,42 @@
+---
+name: Manual Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+      image_tag:
+        description: "Docker image tag to deploy"
+        required: true
+        type: string
+      dry_run:
+        description: "Print what would happen without actually deploying"
+        type: boolean
+        default: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show inputs
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          echo "Environment: $ENVIRONMENT"
+          echo "Image tag:   $IMAGE_TAG"
+          echo "Dry run:     $DRY_RUN"
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "DRY RUN - would deploy $IMAGE_TAG to $ENVIRONMENT"
+          else
+            echo "Deploying $IMAGE_TAG to $ENVIRONMENT..."
+          fi
+          
