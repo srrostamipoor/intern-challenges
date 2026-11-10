@@ -283,10 +283,12 @@ https://github.com/srrostamipoor/secrets-ci-demo. The files here are a copy.
 - `secrets_check.py` exits 1 if it finds a hardcoded password, token or key.
 
 What I observed:
-- The masking step printed `The secret is: ***` and `Length: [N] chars`.
+- The masking step printed `The secret is: ***` and `Length: 18 chars`.
 - A repo secret `DB_PASSWORD` and environment secrets with the same name
-  coexisted. Staging printed length [16] and production [20] (the repo secret
+  coexisted. Staging printed length 16 and production 20 (the repo secret
   was 18), so each job used its own environment's value.
+  `DEPLOY_KEY` showed 12 (staging) and 13 (production).
+- The production job waited about two minutes for my approval before running.
 - `secrets_check.py` returned 0 on the clean project and 1 with a test file
   containing `password = "hunter2hunter2"`, which I then removed.
 
@@ -326,7 +328,7 @@ reviewer.
 A repo secret is available to every job. An environment secret is only available
 to jobs that declare that `environment:`, and the environment can add rules such
 as required reviewers. If both have the same name, the environment secret wins:
-staging and production printed lengths [16] and [20] instead of the repo value's 18.
+staging and production printed lengths 16 and 20 instead of the repo value's 18.
 
 **Q4 — Docker --build-arg danger:**
 The value is stored in the image metadata. `docker history --no-trunc` showed

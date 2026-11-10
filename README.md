@@ -95,9 +95,9 @@ Hands-on, implementation-based challenges completed as part of my DevOps interns
 - [x] Challenge 26 — Docker cleanup and resource management
 
 ### Phase 3 — CI/CD
-- [ ] Challenge 27 — Pipeline stages
-- [ ] Challenge 28 — Triggers
-- [ ] Challenge 29 — Secrets management in CI
+- [x] Challenge 27 — Pipeline stages
+- [x] Challenge 28 — Triggers
+- [x] Challenge 29 — Secrets management in CI
 - [ ] Challenge 30 — Artifact management
 - [ ] Challenge 31 — Pipeline caching
 - [ ] Challenge 32 — Full deploy pipeline
