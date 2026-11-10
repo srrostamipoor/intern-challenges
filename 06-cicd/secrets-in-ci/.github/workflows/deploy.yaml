@@ -1,0 +1,35 @@
+---
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Deploy to staging
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+        run: |
+          echo "Deploying to staging with env-scoped secrets"
+          echo "DB_PASSWORD length: ${#DB_PASSWORD}"
+          echo "DEPLOY_KEY length:  ${#DEPLOY_KEY}"
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    environment: production
+    steps:
+      - name: Deploy to production
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+        run: |
+          echo "Deploying to production after approval"
+          echo "DB_PASSWORD length: ${#DB_PASSWORD}"
+          echo "DEPLOY_KEY length:  ${#DEPLOY_KEY}"
+          

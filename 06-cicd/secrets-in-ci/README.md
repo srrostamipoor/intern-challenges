@@ -266,26 +266,77 @@ Add this step temporarily and observe the Actions log:
 ---
 ## Write-up
 
-*(Fill this in after completing the challenge.)*
-
 **What I built:**
+A CI setup that keeps credentials out of the codebase, in a separate repo
+because workflows only run from the repository root:
+https://github.com/srrostamipoor/secrets-ci-demo. The files here are a copy.
+
+- `ci.yaml`: scans the code with `secrets_check.py` first, runs tests, logs in
+  to Docker Hub with repository secrets, and has a temporary "Prove masking"
+  step.
+- `deploy.yaml`: `deploy-staging` and `deploy-production` use environment
+  secrets. Production has a required reviewer, so the job waited until I
+  approved it.
+- `app/config.py` reads secrets only from environment variables and raises a
+  clear error when one is missing. `app/test_config.py` tests both cases with
+  `monkeypatch`.
+- `secrets_check.py` exits 1 if it finds a hardcoded password, token or key.
+
+What I observed:
+- The masking step printed `The secret is: ***` and `Length: [N] chars`.
+- A repo secret `DB_PASSWORD` and environment secrets with the same name
+  coexisted. Staging printed length [16] and production [20] (the repo secret
+  was 18), so each job used its own environment's value.
+- `secrets_check.py` returned 0 on the clean project and 1 with a test file
+  containing `password = "hunter2hunter2"`, which I then removed.
 
 **What I struggled with:**
+- My first run failed at the Docker Hub login with "Username and password
+  required" because I had not created the repository secrets yet.
+- The README's `pytest app/` fails with exit code 5 when there are no tests, so
+  I added `test_config.py`.
+- Trailing whitespace and a missing final newline made flake8 complain
+  (W293, W292).
 
 **What I'd do differently:**
+- Never print secrets, even masked: masking can be bypassed by changing the
+  value (for example base64). I would use only the length check.
+- Add `secrets_check.py` as a pre-commit hook so it runs before every commit.
+- Scan the full git history (git-secrets or trufflehog) in CI, not only the
+  working tree.
 
 ---
 
 ## Guided questions — answers
 
-*(Fill these in after completing the challenge.)*
-
 **Q1 — secret is empty, why?:**
+(1) The name is wrong or the secret was never created in this repository (I saw
+this: "Username and password required"). (2) The run comes from a fork or
+Dependabot pull request, which gets no secrets. (3) It is an environment secret
+but the job has no `environment:` key.
 
 **Q2 — fork PR no secrets access:**
+Anyone can fork and change the workflow to send `${{ secrets.X }}` to their own
+server, so GitHub withholds secrets and makes the token read-only for fork PRs.
+`pull_request_target` runs in the base context with secrets, but it is risky and
+must not run untrusted PR code. A safer gate is an environment with a required
+reviewer.
 
 **Q3 — repo secret vs environment secret:**
+A repo secret is available to every job. An environment secret is only available
+to jobs that declare that `environment:`, and the environment can add rules such
+as required reviewers. If both have the same name, the environment secret wins:
+staging and production printed lengths [16] and [20] instead of the repo value's 18.
 
 **Q4 — Docker --build-arg danger:**
+The value is stored in the image metadata. `docker history --no-trunc` showed
+`ARG MY_TOKEN=fake-token-123` and the `RUN` line with the value, and Docker warned
+`SecretsUsedInArgOrEnv`. The right way is a BuildKit secret mount:
+`RUN --mount=type=secret,id=token ...` with `docker build --secret`, so the value
+is only available during that RUN and is not stored in a layer.
 
 **Q5 — secret in git history:**
+Yes, it is still exposed. `git log -p -S` found the value in the commit that added
+it even though a later commit deleted the file. I must revoke and rotate the secret
+first. Rewriting history (git filter-repo or BFG, then force push) is optional,
+because existing clones and forks keep the old data.
