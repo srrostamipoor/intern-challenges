@@ -209,26 +209,65 @@ Observe: when lint fails, test, build, and deploy are all skipped. That's the va
 ---
 ## Write-up
 
-*(Fill this in after completing the challenge.)*
-
 **What I built:**
+A four-job GitHub Actions pipeline (lint, test, build, deploy) for a small
+Flask app. Each job uses `needs:` so a failure stops everything after it.
+The build job pushes an image tagged with the commit SHA to Docker Hub using
+repository secrets, and deploy only runs on `main`. Because workflows only run
+from the repository root, I ran it in a separate repo:
+https://github.com/srrostamipoor/pipeline-stages-demo. The files here are a copy.
+
+I broke each stage on purpose, on a separate branch with a pull request:
+- Too-long line: lint failed; test, build and deploy were skipped.
+- `a + b` changed to `a - b`: lint passed, test failed; build and deploy were skipped.
+- `INVALID_INSTRUCTION` in the Dockerfile: lint and test passed, build failed;
+  deploy was skipped.
 
 **What I struggled with:**
+- My first run failed at build with "Username and password required" because I
+  had not created the Docker Hub secrets yet. Adding them and re-running fixed it.
+- The README's code had one blank line between functions, so flake8 reported
+  E302/E305/W292 locally. Running lint locally first caught it before CI.
+- On my Windows machine `flake8.exe` was blocked by an Application Control
+  policy; `python -m flake8` worked.
+- Understanding `github.ref` in `if: github.ref == 'refs/heads/main'`: on a
+  PR it is `refs/pull/N/merge`, not `main`.
 
 **What I'd do differently:**
+- Only push the image on `main` (`push: ${{ github.ref == 'refs/heads/main' }}`),
+  so PRs build but do not publish.
+- Split dev tools (flake8, pytest) into `requirements-dev.txt` so they are not
+  inside the production image.
+- Update the actions to newer versions (GitHub warns that Node 20 is deprecated).
 
 ---
 
 ## Guided questions — answers
 
-*(Fill these in after completing the challenge.)*
-
 **Q1 — parallel jobs:**
+Yes. Remove `needs: lint` from `test` and set `needs: [lint, test]` on `build`.
+Lint and test then start at the same time and build waits for both. Total time is
+the slowest job instead of the sum, but if lint fails, test still runs and uses
+minutes. (I did not run this variant.)
 
 **Q2 — failed vs skipped:**
+Failed means the job ran and exited with an error (red cross). Skipped means it
+never started, either because a job in `needs` failed or because its `if:` was
+false (grey). In my PRs, lint showed "Failing after 9s" and the rest "Skipped".
 
 **Q3 — deploy on PR:**
+It is skipped. On a pull request `github.ref` is `refs/pull/N/merge`, so the
+condition is false. Only after the merge, a push to `main` has
+`refs/heads/main` and deploy runs. I saw deploy skipped in all my PRs.
 
 **Q4 — build after tests:**
+If I built and pushed first, an untested (possibly broken) image would be in the
+registry, and anyone or any system could pull it. A test failure would also be
+found only after the most expensive step. Building after tests means only code
+that passed gets an image.
 
 **Q5 — one job with &&:**
+I would lose separate status per stage (one red job instead of seeing which stage
+failed), parallel jobs, re-running only a failed stage, per-job `if:` conditions
+(like deploy only on main), and isolation of secrets between stages. The gain is
+one checkout and one install, so it can be a bit faster.
