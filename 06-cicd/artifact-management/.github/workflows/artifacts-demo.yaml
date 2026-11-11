@@ -1,0 +1,39 @@
+---
+name: Artifacts Demo
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r app/requirements.txt pytest pytest-cov
+      - run: pytest app/ --cov=app --cov-report=xml --cov-report=html
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ github.sha }}
+          path: |
+            coverage.xml
+            htmlcov/
+          retention-days: 30
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report-${{ github.sha }}
+
+      - name: Show what was downloaded
+        run: ls -la
+        
