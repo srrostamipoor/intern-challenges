@@ -210,32 +210,92 @@ Cache entries expire: after 7 days of not being accessed
 ---
 ## Write-up
 
-*(Fill this in after completing the challenge.)*
-
 **Times I measured:**
 
-| Workflow | First run | Second run | Savings |
+All times are the `build` job duration from the Actions UI (GitHub-hosted
+`ubuntu-latest`, Python 3.11, same `requirements.txt`).
+
+| Workflow | First run | Second run (cache warm) | Savings |
 |---|---|---|---|
-| no-cache | | | 0% |
-| pip-cache | | | |
-| docker-cache | | | |
+| no-cache | 18s | 22s (4 runs ranged 14-22s) | 0% (baseline) |
+| pip-cache | 18s (miss, +2s to save cache) | 19s (hit; 17s in a later run) | ~0%, within noise |
+| docker-cache | 44s (cold, incl. 9s cache export) | 27s | 39% of the job, 62% of the build step (29s -> 11s) |
+
+Cache invalidation (added `httpx` to `requirements.txt`):
+
+| Workflow | Result |
+|---|---|
+| pip-cache | key changed, but `setup-python` fell back to the previous cache by prefix; only 5 new packages were downloaded, then a new cache was saved. Job 22s. |
+| docker-cache | cache manifest imported, but `COPY requirements.txt` and `RUN pip install` ran again (12.5s). Job 45s, back to the cold time. |
 
 **What I struggled with:**
+- The README promised pip install would take 60-90s and drop to ~5s. On GitHub's
+  runners it took only 9-16s without cache, because downloads run at 150-700 MB/s
+  (`0:00:00` per wheel in the log). With the pip cache hit the install step was
+  still 10-12s, so the pip cache gave no measurable gain; run-to-run noise
+  (14-22s for the identical baseline) was larger than any difference.
+- The reason is what `cache: "pip"` stores: the pip download cache (~54 MB of
+  wheels), not the installed packages. Unpacking and installing pandas/numpy still
+  happens on every run, and restoring/saving the cache costs 2-3s extra.
+- The Docker layer cache did pay off, because a cache hit skips the whole
+  `RUN pip install` layer (download + install), not just the download.
+- On the very first docker run the log shows `importing cache manifest ... ERROR:
+  not found`. That is expected: the `buildcache` tag does not exist yet, and the
+  build continues and creates it.
+- I first predicted that adding a package would force a full re-download in
+  pip-cache. It does not: `setup-python` automatically uses a prefix restore key and
+  restores the nearest older cache.
+- With four workflows triggered by every push, it took care to match each log to
+  the right workflow.
 
 **What I'd do differently:**
+- Measure on a workload where caching matters (slow downloads, or packages that must
+  be compiled from source) before adding cache steps; here the pip cache is
+  complexity without a benefit.
+- Pin dependency versions (or use a lock file), so a cache hit cannot hide newer
+  versions and the hash of `requirements.txt` reflects the real environment.
+- Keep Dockerfile order cache-friendly (copy `requirements.txt`, install, then copy
+  code), and consider caching the virtualenv itself if install time dominates.
+- Delete the Docker Hub token created for this demo when finished.
 
 ---
 
 ## Guided questions — answers
 
-*(Fill these in after completing the challenge.)*
-
 **Q1 — hash the file, not the name:**
+The file name never changes, but its content does. A key built from the name alone
+would keep matching after a dependency changed, so the job would restore stale
+packages that no longer match `requirements.txt`. A hash of the content makes the
+key change exactly when the content changes (content-addressed). In the logs the key
+ends with a different hash after I added `httpx`.
 
 **Q2 — comment in requirements.txt:**
+Yes, the key changes, because any byte change changes the hash. It arguably should
+not, since the installed packages are the same, but the hash cannot know that. I
+reasoned this from how the hash works; I did not run this exact test. The cost
+differs by cache type: with pip-cache the prefix fallback restores the older cache,
+so the extra cost is small; with the Docker layer cache, `COPY requirements.txt`
+changes, so the expensive `RUN pip install` layer (~12s here) is rebuilt for a
+comment-only change.
 
 **Q3 — what pip cache stores:**
+The downloaded wheel files (pip's download cache at `~/.cache/pip`, ~54 MB), not the
+installed packages. Evidence: with a cache hit the log shows `Using cached X.whl`
+instead of `Downloading`, but `Installing collected packages` still runs and the
+install step took 10-12s, about the same as without cache.
 
 **Q4 — Docker layer rebuild on app.py change:**
+Only `COPY app/ .` (the last layer) and the image export are rebuilt. `FROM`,
+`WORKDIR`, `COPY requirements.txt` and `RUN pip install` come from cache, because
+their inputs did not change. Observed: the build step dropped from 29s to 11s. If
+`requirements.txt` changes instead, everything after `COPY requirements.txt` is
+rebuilt (observed: `pip install` ran again, 12.5s).
 
 **Q5 — bug that caching masks:**
+A cached environment can hide a problem that a clean install would show. For
+example, a dependency version that was yanked or whose newer release breaks the app
+keeps "working" in CI because the old wheel or old layer is reused, and it fails
+later on a fresh machine or a production image build. With unpinned requirements, the
+Docker layer cache can also keep serving old, possibly vulnerable package versions
+until `requirements.txt` happens to change, and then many versions jump at once.
+Mitigation: pin versions and periodically run a build without cache.

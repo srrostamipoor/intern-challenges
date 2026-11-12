@@ -1,0 +1,11 @@
+flask
+requests
+pandas
+numpy
+boto3
+psycopg2-binary
+pytest
+pytest-cov
+flake8
+
+httpx
