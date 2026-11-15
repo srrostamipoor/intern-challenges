@@ -257,7 +257,99 @@ git push -u origin feature/add-endpoint
 ---
 ## Write-up
 
-*(Fill this in after completing the challenge.)*
+**What I built:**
+A full CI/CD pipeline for a small Flask app, in a separate repo
+(https://github.com/srrostamipoor/full-deploy-demo); the files here are a copy.
+On a pull request, `lint` and `test` run in parallel and a ruleset on `main`
+blocks the merge until both pass. After a merge to `main`, `lint` and `test`
+run again, then `build` pushes the image to Docker Hub (tagged with the commit
+SHA and `latest`, with a registry build cache), then `deploy` calls a deploy
+hook and smoke-tests the pushed image, and `notify` always runs and prints the
+result of every job. The app reads `PORT` (default 8080) and has `/health`.
+
+**What I measured:**
+- PR with a broken `add` function: `lint` passed in 14 s, `test` failed in 13 s,
+  `build` and `deploy` were skipped, `notify` ran, and the merge was blocked.
+- Fixed PR: all checks green in 17 s (lint and test ran in parallel).
+- Merge to `main`: all five jobs ran, total 59 s. The deploy hook returned 200
+  and the hook receiver logged a POST from the GitHub runner.
+
+**What I could not do (honest notes):**
+- Render asked for a payment card before it would create the service, so I did
+  not create a real Render service. I used a free webhook receiver (webhook.site)
+  as the deploy hook. The secret keeps the name `RENDER_DEPLOY_HOOK_URL`, so the
+  pipeline would work with a real Render hook without changes.
+- Because there is no real service, I replaced "wait 60 s and curl the Render
+  URL" with a smoke test: the deploy job pulls the image it just pushed (by commit
+  SHA), runs it on the runner and calls `/health`. This checks the image itself,
+  but not Render's cold start, health check path or port binding.
+- I did not set `DISCORD_WEBHOOK`, so `notify` only printed the job results.
+
+**What I struggled with:**
+- `pytest` collected 0 items at first because `test_main.py` was empty (not
+  saved), and flake8 reported W293/W292 (trailing whitespace, no final newline).
+- `docker run -p 8080:8080` failed with "port is already allocated" because a
+  container from an earlier challenge still used 8080; I stopped it with
+  `docker compose down`.
+- My first commit included `.coverage` and `__pycache__`; I added a `.gitignore`
+  and removed them with `git rm --cached`.
+- The Render form defaulted to the Python runtime with a gunicorn start command;
+  for this project it must be Docker with an empty root directory.
+- The branch protection did not block the merge at first. GitHub showed the newer
+  "Rulesets" form, and a ruleset does nothing unless its enforcement status is
+  set to Active; I also had to add `lint` and `test` as required checks.
+
+**What I'd do differently:**
+- Use a real hosting service (or a self-hosted runner with a test server) so the
+  last step checks the real URL after a deploy.
+- Pin the actions to newer versions (GitHub warns that Node 20 is deprecated) and
+  use `ubuntu-24.04` instead of `ubuntu-latest`.
+- Add a `rollback` workflow that redeploys a given SHA (it works because every
+  image is tagged with its commit SHA).
+
+---
+
+## Guided questions - answers
+
+**Q1 - Dependency graph:**
+```
+lint --+
+       +--> build --> deploy --> notify
+test --+
+```
+`notify` also waits for all four jobs (`needs: [lint, test, build, deploy]`) but
+runs even if one of them fails (`if: always()`). Lint and test have no `needs:`
+between them, so they run at the same time and `build` waits for both. The time
+is the slowest parallel job plus the sequential ones: max(30 s, 2 min) + 3 min =
+about 5 min (plus deploy and notify). Running them one after the other would take
+30 s + 2 min + 3 min = 5.5 min.
+
+**Q2 - Deploy hook:**
+A deploy hook is a secret URL; sending an HTTP POST to it tells the hosting
+service "deploy now". It is better than SSH-ing in manually because the pipeline
+needs no server credentials or open SSH port, it is repeatable and logged, and
+only someone who knows the URL can trigger it. The URL itself must be stored as a
+secret. In my run the hook returned 200 and the pipeline accepts 200, 201 and 202.
+
+**Q3 - needs.deploy.result on a PR:**
+It is `"skipped"`, not `"failure"`. `deploy` has `if: github.ref == 'refs/heads/main'`,
+which is false on a PR, so the job never starts. `notify` still runs because of
+`if: always()`. In my PR the notify log printed
+`build=skipped deploy=skipped`, and the overall result was success, because my
+script only treats `"failure"` as a failure.
+
+**Q4 - Duplicate checks after merge:**
+It is partly duplicate, but it is necessary. The PR checks test the branch code
+(with the latest `main` only if "up to date" is enforced). After the merge, `main`
+contains the combined result of all merged changes, which has never been tested
+exactly as it is now. The run on `main` also does the things a PR must not do:
+build, push and deploy.
+
+**Q5 - build result on a PR:**
+`"skipped"`. `build` has `if: github.ref == 'refs/heads/main'`, which is false on a
+PR, and a skipped job is not a success. In the PR run it showed "Skipped", and
+`notify` still ran and reported `build=skipped`. Skipped counts neither as success
+nor as failure, so the overall result stayed "success" in my script.
 
 **What I built:**
 

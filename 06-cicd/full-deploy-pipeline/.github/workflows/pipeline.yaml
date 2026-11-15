@@ -1,0 +1,120 @@
+---
+name: Full Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: app/requirements.txt
+      - run: pip install flake8
+      - run: flake8 app/ --max-line-length=120
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: app/requirements.txt
+      - run: pip install -r app/requirements.txt pytest pytest-cov
+      - run: pytest app/ -v --cov=app --cov-report=xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ github.sha }}
+          path: coverage.xml
+          retention-days: 14
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/pipeline-app:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/pipeline-app:latest
+          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/pipeline-app:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/pipeline-app:buildcache,mode=max
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - name: Trigger deploy hook
+        env:
+          HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$HOOK_URL")
+          echo "Deploy hook response: $CODE"
+          case "$CODE" in
+            200|201|202) echo "Deploy hook accepted." ;;
+            *) echo "Deploy hook failed with status $CODE"; exit 1 ;;
+          esac
+
+      - name: Smoke test the pushed image
+        env:
+          IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/pipeline-app:${{ github.sha }}
+        run: |
+          docker run -d --name smoke -p 8080:8080 "$IMAGE"
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fs http://localhost:8080/health; then
+              echo
+              echo "Image is healthy."
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs smoke
+          exit 1
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: [lint, test, build, deploy]
+    if: always()
+    steps:
+      - name: Send notification
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK }}
+          LINT_STATUS: ${{ needs.lint.result }}
+          TEST_STATUS: ${{ needs.test.result }}
+          BUILD_STATUS: ${{ needs.build.result }}
+          DEPLOY_STATUS: ${{ needs.deploy.result }}
+        run: |
+          echo "lint=$LINT_STATUS test=$TEST_STATUS build=$BUILD_STATUS deploy=$DEPLOY_STATUS"
+          if [ -z "$WEBHOOK_URL" ]; then
+            echo "No DISCORD_WEBHOOK set, skipping notification"
+            exit 0
+          fi
+          OVERALL="success"
+          for STATUS in $LINT_STATUS $TEST_STATUS $BUILD_STATUS $DEPLOY_STATUS; do
+            [ "$STATUS" = "failure" ] && OVERALL="failure"
+          done
+          curl -s -X POST "$WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{\"content\": \"Pipeline: $OVERALL (lint=$LINT_STATUS test=$TEST_STATUS build=$BUILD_STATUS deploy=$DEPLOY_STATUS)\"}"

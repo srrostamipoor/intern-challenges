@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: pipeline-app
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: APP_ENV
+        value: production
+    healthCheckPath: /health
+    autoDeploy: false
