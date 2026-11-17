@@ -294,26 +294,106 @@ terraform.tfvars
 ---
 ## Write-up
 
-*(Fill this in after completing the challenge.)*
-
 **What I built:**
+A Terraform configuration (`main.tf`, `variables.tf`, `outputs.tf`, `backend.tf`) that
+creates an S3 bucket with versioning and a security group, with input variables
+(including a `validation` rule on `environment`) and outputs. I ran it against
+**Floci**, a free local AWS emulator on `localhost:4566`, because LocalStack now needs an
+account and an auth token for its newest image. I ran the full cycle `init`, `plan`,
+`apply`, a change (extra tags), `plan -destroy`, `destroy`, and then moved the state to a
+remote backend: an S3 bucket for the state plus a DynamoDB table for locking, both created
+by a small separate `bootstrap/` project (the backend has to exist before it can be used).
+I did not use real AWS, and no EC2 instance was created (only a security group), because I
+did not mount the Docker socket into the emulator.
+
+**What I measured:**
+- First `plan`: `3 to add, 0 to change, 0 to destroy`. `apply` created the bucket and the
+  security group at the same time, and the versioning resource after the bucket, because it
+  references `aws_s3_bucket.assets.id`.
+- Adding tags: `~ update in-place`, `0 to add, 1 to change`, and the resource kept the same id.
+  The state `serial` went from 4 to 6.
+- `terraform destroy`: `3 destroyed` (versioning first, then the bucket), and the state became
+  `"resources": []`. Terraform also kept `terraform.tfstate.backup`.
+- Remote state: after `init` with the S3 backend and a new `apply`, the state was in
+  `myapp-terraform-state/dev/terraform.tfstate` (serial 1, a new lineage); the old local
+  `terraform.tfstate` stayed as a small empty stub.
 
 **What I struggled with:**
+- `winget install Hashicorp.Terraform` failed with a 404 for version 1.17.1 (and the
+  `msstore` source could not be resolved); installing `--source winget --version 1.16.6` worked.
+- Docker Desktop was not running at first ("failed to connect to the docker API").
+- `terraform plan` asked me for `var.environment` because `terraform.tfvars` did not exist
+  (the file was never created); after creating it, plan ran without questions.
+- I pressed Enter at the `apply` prompt instead of typing `yes`, so it said
+  "Apply cancelled" and nothing changed.
+- `dynamodb_table` in the S3 backend is deprecated in Terraform 1.16 (it only warns and
+  still works); the replacement is `use_lockfile`.
+- In the lock test, a leftover `apply` waiting for confirmation kept the lock, which is how I
+  got the lock error; answering `no` in that window released it.
 
 **What the state file contained that surprised me:**
+- It is plain JSON and much bigger than my code (about 6.6 KB vs 1.6 KB for `main.tf`),
+  because it stores every attribute of every resource, also the ones I never wrote
+  (`hosted_zone_id`, `request_payer`, default AES256 encryption, the `grant` block).
+- It holds real identifiers: ids, ARNs, the account id (`000000000000` on the emulator).
+  If a resource had a password, it would be here in clear text.
+- `serial` increases with every change, and `lineage` identifies the history of the state.
+- `private` is a base64 string; decoded, it is only the provider's timeouts (create 20 min,
+  delete 1 h), not a secret.
+- The bucket's inline `versioning { enabled = false }` differs from the separate
+  `aws_s3_bucket_versioning` resource (`Enabled`). I think this is because the inline
+  attribute is deprecated in provider v5 (I did not verify this).
+- Terraform itself recommends committing `.terraform.lock.hcl` (it pins the provider version),
+  but the challenge's `.gitignore` excludes it.
 
 ---
 
-## Guided questions — answers
+## Guided questions - answers
 
-*(Fill these in after completing the challenge.)*
+**Q1 - manual deletion, terraform plan:**
+I deleted the bucket outside Terraform (an S3 DELETE request to the emulator). `terraform plan`
+refreshed the state, printed "Objects have changed outside of Terraform" with
+`aws_s3_bucket.assets has been deleted`, and then planned to create it again:
+`Plan: 2 to add, 0 to change, 0 to destroy` (the bucket and its versioning resource, which
+depends on it). The state is only a record; the real infrastructure is what plan compares to.
 
-**Q1 — manual deletion, terraform plan:**
+**Q2 - state file in Git:**
+The state is plain text and contains real ids, ARNs and account ids, and any secret that a
+resource uses (for example a database password). Git keeps history forever, so even if I
+delete the file later the secret stays in old commits and in every clone. It can also be
+overwritten or conflict when many people commit it. State should be in a private remote
+backend (S3 with encryption and versioning) and `*.tfstate*` should be in `.gitignore`.
 
-**Q2 — state file in Git:**
+**Q3 - state locking:**
+Locking stops two people (or two pipeline runs) from changing the same state at the same
+time. Before `apply`, Terraform writes a lock record to a DynamoDB table with a conditional
+write; if it already exists, the second run fails. In my test, while one `apply` was waiting
+for confirmation, `terraform plan` in another window failed with:
+`Error acquiring the state lock ... ConditionalCheckFailedException` and the lock info
+(ID, path, operation `OperationTypeApply`, who, when). Without a lock, two applies could
+overwrite each other's changes and corrupt the state. `terraform force-unlock <ID>` removes
+a stuck lock, but only if no apply is really running.
 
-**Q3 — state locking:**
+**Q4 - renaming a resource:**
+After renaming `aws_s3_bucket.assets` to `aws_s3_bucket.static`, `terraform plan` showed
+`2 to add, 0 to change, 2 to destroy`: it treated the old address as removed (destroy) and the
+new one as new (create), and the versioning resource had to be replaced because its bucket
+became "known after apply". For a real bucket this would delete it (and its data).
+The safe way is a `moved` block:
+```hcl
+moved {
+  from = aws_s3_bucket.assets
+  to   = aws_s3_bucket.static
+}
+```
+With it, plan said `aws_s3_bucket.assets has moved to aws_s3_bucket.static` and
+`0 to add, 0 to change, 0 to destroy`; apply only changed the state. `terraform state mv`
+does the same directly on the state, but a `moved` block stays in the code for the team.
 
-**Q4 — renaming a resource:**
-
-**Q5 — terraform destroy vs manual delete:**
+**Q5 - terraform destroy vs manual delete:**
+`terraform destroy` deletes the real resources in the right order (versioning before the
+bucket, from the dependency graph) and also removes them from the state, so the state ends
+clean (`"resources": []`, `state list` empty). Deleting manually leaves the state unchanged:
+it still lists the resources, so it is stale until the next refresh shows the difference
+(as in Q1), and I must know the order myself. After `destroy` the bucket request returned
+`404 NoSuchBucket`, and the state was clean.

@@ -1,0 +1,9 @@
+# Terraform state - contains sensitive values (passwords, IDs)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Variables with real values
+terraform.tfvars
+*.auto.tfvars
