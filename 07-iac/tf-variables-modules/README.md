@@ -284,26 +284,88 @@ resource "aws_s3_bucket" "assets" {
 ---
 ## Write-up
 
-*(Fill this in after completing the challenge.)*
-
 **What I built:**
+A reusable Terraform module, `modules/web-service`, that creates an S3 bucket,
+the bucket versioning setting, and a security group whose open ports come from a
+list variable (using a `dynamic "ingress"` block). Two environments, `dev` and
+`staging`, call the same module with different values (versioning off/on, ports
+80+22 vs 80+443, different cost-center tag) and each has its own state file.
+Everything ran against Floci, a free local AWS emulator on `localhost:4566`
+(no real AWS account); no EC2 instance is created, only the security group.
+
+**What I observed:**
+- `dev`: `Plan: 3 to add`; resource addresses are prefixed with `module.web.`.
+  The bucket got four tags: `CostCenter` (from the environment), and `Project`,
+  `Environment`, `ManagedBy` (from the module) merged by `merge()`. The security
+  group had two `ingress` blocks (22 and 80) generated from `allowed_ports`.
+  The versioning status was `Suspended`, and `apply` accepted it.
+- `staging`: same module, versioning `Enabled`, ingress 443 and 80, different
+  names (`myapp-staging-assets`, `myapp-staging-sg`). The two states are separate
+  files (about 6.7 KB each), and the two security groups have different ids.
+- Missing required input: removing `project_name` from the `module "web"` block
+  made `terraform validate` fail with
+  `Missing required argument ... The argument "project_name" is required`.
+- Changing the module (adding an `Owner` tag): `plan` in both environments
+  showed `0 to add, 2 to change, 0 to destroy`. After `apply` in `dev` only,
+  `dev` said `No changes` and `staging` still showed `2 to change`, until I ran
+  `apply` there too.
+- Adding 443 to `allowed_ports` in `dev`: `plan` showed `1 to change` (the
+  security group, in place). The `ingress` list was printed as old entries
+  removed and new entries added; I did not find out why it prints 22 and 80 that
+  way (I did not apply this change and reverted it).
 
 **What I struggled with:**
+(edit to match your own experience; these happened during my run)
+- I first saved `variables.tf` in `modules/` instead of `modules/web-service/`,
+  so it was not part of the module. A directory listing showed it.
+- `terraform init` failed three times with
+  `releases.hashicorp.com: unexpected EOF` while downloading the AWS provider
+  (a large file over an unstable connection). I copied the provider I already had
+  from the previous challenge into a plugin cache directory
+  (`TF_PLUGIN_CACHE_DIR`) and copied its `.terraform.lock.hcl`; then `init` used
+  the cache without downloading.
+- I pressed Enter instead of typing `yes` at the `apply` prompt, which printed
+  `Apply cancelled` and created nothing.
 
 **What I'd do differently:**
+(suggestions, edit freely)
+- Set up a provider plugin cache before the first `init`, so each environment
+  does not download the provider again.
+- Check the folder layout (`dir`) after creating each file.
+- Save the plan with `-out` and apply that exact plan.
 
 ---
 
-## Guided questions — answers
+## Guided questions - answers
 
-*(Fill these in after completing the challenge.)*
+**Q1 - optional vs required variables:**
+A variable with a `default` is optional: if the caller does not set it, the
+default is used. A variable without a `default` is required. If the module call
+does not provide it, Terraform stops at validation with
+`Missing required argument` (I saw this for `project_name`).
 
-**Q1 — optional vs required variables:**
+**Q2 - locals vs variables:**
+A variable is an input from outside the module (the caller, a tfvars file or
+`-var`). A local is a value computed inside the module and cannot be set from
+outside. I use locals for things I would otherwise repeat, like the merged tag
+map (used by both the bucket and the security group) or a computed name.
 
-**Q2 — locals vs variables:**
+**Q3 - dynamic block:**
+The `dynamic` block uses `for_each` to loop over a collection (here
+`var.allowed_ports`); `content {}` is the body generated for each item. Inside
+it, `ingress.value` is the current element (for example 80 or 22). The loop
+variable is named after the dynamic block's label and can be renamed with
+`iterator`. Adding 443 to the list produced one more `ingress` entry in the plan
+without any new code.
 
-**Q3 — dynamic block for_each:**
+**Q4 - module update propagation:**
+No. All environments share the module code, but each one has its own state, so
+a change in the module only takes effect where I run `terraform apply`.
+I saw this: after the `Owner` tag change, `plan` showed pending changes in both
+environments, and applying in `dev` left `staging` still pending.
 
-**Q4 — module update propagation:**
-
-**Q5 — module source types:**
+**Q5 - module source types:**
+A relative path keeps the project portable: it works on any machine and any
+clone, while an absolute path exists on one computer only. Terraform also
+supports the Terraform Registry, GitHub and generic Git URLs, Bitbucket, HTTP
+URLs, S3 and GCS buckets, and local paths.

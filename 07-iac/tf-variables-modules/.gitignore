@@ -1,0 +1,8 @@
+# Terraform state - may contain sensitive values
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Variables with real values
+terraform.tfvars
+*.auto.tfvars
