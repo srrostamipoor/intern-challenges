@@ -100,11 +100,11 @@ Hands-on, implementation-based challenges completed as part of my DevOps interns
 - [x] Challenge 29 — Secrets management in CI
 - [x] Challenge 30 — Artifact management
 - [x] Challenge 31 — Pipeline caching
-- [ ] Challenge 32 — Full deploy pipeline
+- [x] Challenge 32 — Full deploy pipeline
 
 ### Phase 3 — Infrastructure as Code
-- [ ] Challenge 33 — Terraform basics
-- [ ] Challenge 34 — Terraform variables and modules
+- [x] Challenge 33 — Terraform basics
+- [x] Challenge 34 — Terraform variables and modules
 - [ ] Challenge 35 — Terraform plan, apply, and drift
 - [ ] Challenge 36 — Ansible playbooks and inventories
 - [ ] Challenge 37 — Ansible roles and idempotency
