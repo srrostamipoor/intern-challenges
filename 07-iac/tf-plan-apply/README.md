@@ -200,29 +200,32 @@ terraform apply plan.tfplan        # apply exactly what was planned — nothing 
 ---
 ## Write-up
 
-**Status:** work in progress. Scenarios 1 (reading a plan) and 2 (drift) are done and documented.
-Scenario 3 (lock demo), the `terraform state rm` / `import` demo and the `plan -out` demo
-will be added in the next commit. Answers Q2-Q5 below are reasoning/documentation based until
-those demos are done.
-
 **What I built:**
 A small Terraform project (`main.tf`, `variables.tf`, `outputs.tf`) with an S3 bucket
 (`myapp-dev-assets`) and a security group, running against Floci (a local AWS emulator).
-With it I read three kinds of plans (create, in-place update, replacement) and simulated drift
-in two directions: a tag added by hand and a bucket deleted by hand. Details are in
-`scenarios/01-read-plan-output.md` and `scenarios/02-drift-demo.md`.
+With it I read three kinds of plans (create, in-place update, replacement), simulated drift in two
+directions (a tag added by hand, a bucket deleted by hand), used `state list/show`, `refresh-only`,
+`state rm` and `import`, simulated a state lock conflict with two terminals, and tested the safe
+`plan -out` / `apply plan.tfplan` pattern, including a stale plan. Details are in
+`scenarios/01-read-plan-output.md`, `02-drift-demo.md` and `03-lock-demo.md`.
 
 **Drift scenario I found most interesting:**
-Deleting the bucket by hand. `terraform plan` started with `Refreshing state...`, found nothing
-at that id, dropped the bucket from its picture and planned `+ create`. The state said "exists",
-reality said "gone", and the code is the source of truth, so the bucket was rebuilt from the code.
-It also showed that Terraform rebuilds the *resource*, not the *data* inside it.
+Deleting the bucket by hand. `terraform plan` started with `Refreshing state...`, found nothing at that
+id, dropped the bucket from its picture and planned `+ create`. The state said "exists", reality said
+"gone", and the code is the source of truth, so the bucket was rebuilt from the code. It also showed that
+Terraform rebuilds the *resource*, not the *data* inside it.
 
 **What I struggled with:**
-Telling the three things apart: code, state (what Terraform remembers) and reality (what really
-exists). Also reading replacement plans: `-/+` is the label of the whole resource, while `~`, `+`,
-`-` are labels of single attributes, so one replaced resource shows all of them. Finally, the AWS CLI
-and the Docker Hub image were not reachable, so I sent the S3 calls over plain HTTP with `curl.exe`.
+Telling the three things apart: code, state (what Terraform remembers) and reality (what really exists).
+Also reading replacement plans: `-/+` is the label of the whole resource, while `~`, `+`, `-` are labels of
+single attributes. Some practical problems too: the AWS CLI and the Docker Hub image were not reachable, so
+I sent the S3 calls over plain HTTP with `curl.exe`; on Windows PowerShell `terraform plan -out=plan.tfplan`
+failed with "Too many command line arguments" until I quoted the argument (`"-out=plan.tfplan"`); and a
+Terraform prompt needs an English `yes` (a Persian keyboard layout cancelled the apply once).
+
+**What I would do differently:**
+Run the lock demo against a remote backend (S3 + DynamoDB on the emulator) to see the real `Lock Info` and
+try `force-unlock` with a lock ID, which the local Windows file lock does not give.
 
 ---
 
@@ -239,12 +242,17 @@ application over, and only then remove the old one (least downtime, old data sta
 destroy fails instead of happening.
 The least risky is (2) combined with a backup first, because the old database is never destroyed until
 the new one is proven. In every case the `destroy` count in the plan must be reviewed by a human.
+(I saw the `-/+` replacement pattern on a bucket and a security group with `-var "environment=prod"`;
+I did not test a database.)
 
 **Q2 — refresh vs plan:**
 `refresh` reads the real infrastructure and updates the *state* with what it finds. `plan` does that
 refresh first (the `Refreshing state...` lines), then compares the result with the *configuration* and
-lists the actions needed. Neither changes real infrastructure. `refresh` does rewrite the state file,
-so it is not completely harmless: if resources look missing (wrong account or credentials), they can be
+lists the actions needed. Neither changes real infrastructure. I checked this: after adding a tag by hand,
+`terraform plan -refresh-only` showed it but `terraform state show` still listed the old tags (plan does not
+write the state file); after `terraform apply -refresh-only` the state showed the new tag, and a normal
+`plan` still wanted to remove it, so the real bucket was never touched. `refresh` does rewrite the state
+file, so it is not completely harmless: if resources look missing (wrong account or credentials), they can be
 dropped from the state. The standalone `terraform refresh` is deprecated; `terraform apply -refresh-only`
 does the same but shows the changes first and asks for approval.
 
@@ -252,9 +260,12 @@ does the same but shows the changes first and asks for approval.
 Use it to stop managing a resource without destroying it: for example handing it over to another
 Terraform project/team, splitting a state, or removing something that must keep running but should not
 be managed here. The next `terraform plan` still finds the resource block in the code but nothing in
-the state, so it plans to **create** it again, while the real resource still exists. Applying that would
-fail with "already exists" or create a duplicate. So after `state rm` the block must also be removed from the
-code (to stop managing it) or the resource must be imported back with `terraform import`.
+the state, so it plans to **create** it again, while the real resource still exists. I saw exactly this:
+after `state rm aws_s3_bucket.assets`, the plan said `will be created` and only the security group was
+refreshed. Applying that would fail with "already exists" or create a duplicate (I deliberately did not
+apply). So after `state rm` the block must also be removed from the code (to stop managing it) or the
+resource must be imported back; `terraform import aws_s3_bucket.assets myapp-dev-assets` worked and the
+next plan showed no changes.
 
 **Q4 — force-unlock safety:**
 Not automatically. `force-unlock` removes the lock without checking that the owner is really gone; if the
@@ -263,13 +274,20 @@ apply is still running, two writers can corrupt the state. Check first: the lock
 the CI logs, check the machine); and whether the apply may have stopped halfway, leaving real resources
 changed but the state not updated. Only when you are sure nothing is running, unlock, then run
 `terraform plan` to see the real state of things. With a versioned S3 backend an older state version can
-be recovered if something goes wrong.
+be recovered if something goes wrong. (In my local test the lock was a Windows file lock without a lock ID,
+so I could show the lock error but not run `force-unlock` itself.)
 
 **Q5 — plan → apply gap:**
 Mostly yes, but not in every case. `terraform apply plan.tfplan` applies exactly the saved actions and does
-not plan again. If the *state* changed in the meantime (someone else applied), Terraform refuses the saved
-plan as stale. What it cannot guarantee is the outcome against a changed *reality*: if someone changed or
-deleted a resource by hand during those 5 minutes (drift), the saved actions run against different
-infrastructure and may fail or give a different result. Values marked `(known after apply)` are also only
-decided at apply time. For this reason the plan file should be applied soon after approval, and the
-plan file itself should be treated as sensitive, because it can contain secret values.
+not plan again (and it does not ask for `yes`). I tested two things that can change in between:
+- *The state changed* (someone else applied): I saved `old.tfplan`, ran a normal `apply`, then
+  `terraform apply old.tfplan` failed with `Error: Saved plan is stale ... the state was changed by another
+  operation after the plan was created.`
+- *Reality changed by hand* (a tag added directly): the saved plan was accepted, because the state had not
+  changed, and it applied exactly its own actions. It did not notice or touch the manual tag; the tag showed
+  up as drift in the next `plan`.
+So the apply does what the plan said, but it does not re-check reality: if someone changed or deleted a
+resource by hand during those 5 minutes, the saved actions run against different infrastructure and may fail
+or give a different result. Values marked `(known after apply)` are also only decided at apply time. For this
+reason the plan file should be applied soon after approval and treated as sensitive, because it can contain
+secret values.
