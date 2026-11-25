@@ -277,26 +277,79 @@ This is the core principle of Ansible. Document what "changed" vs "ok" means in 
 ---
 ## Write-up
 
-*(Fill this in after completing the challenge.)*
-
 **What I built:**
+An Ansible project that configures three Docker containers acting as servers (`web1`, `web2`, `db1`)
+over SSH: a static inventory with groups (`web`, `db`, and `servers` as a group of groups),
+`group_vars` for shared and per-group variables, a playbook that installs Nginx and deploys a
+config file with a handler, and a playbook that creates a `deploy` user with a `.ssh` directory
+and a NOPASSWD sudoers file. Both playbooks are idempotent: the second run showed `changed=0`
+on every host.
 
-**What I struggled with:**
+**What I struggled with / what I changed from the challenge text:**
+- The image `rastasheep/ubuntu-sshd:22.04` does not exist (tags stop at 18.04), and the 18.04 image
+  has Python 3.6, which is too old for the ansible-core version I installed (2.20). Modules run
+  Python on the *target*, so the target Python must be new enough. I built my own small image from
+  `ubuntu:22.04` (`Dockerfile`: openssh-server, python3, root login by password) and used it in
+  `docker-compose.yaml`.
+- Ansible does not run natively on Windows, so I ran it from WSL2 (Ubuntu). Password SSH needs
+  `sshpass` on the control node.
+- Recreated containers get new SSH host keys, so I added `-o UserKnownHostsFile=/dev/null` to
+  `ansible_ssh_extra_args` (in addition to `StrictHostKeyChecking=no`). This is fine for a throwaway
+  lab, not for real servers.
+- `copy` does not render `{{ server_name }}`, so the placeholder would be written literally into the
+  Nginx config. I used the `template` module instead (Jinja2 is rendered).
+- Nginx's default site also listens on port 80, so I removed `sites-enabled/default`.
+- The base image has no `sudo`, so `create-user.yaml` first installs it (the sudoers task needs
+  `/etc/sudoers.d`). That task failed once because `apt` timed out on the network, so I added
+  `retries`/`until` to it.
+- `root/root` in `group_vars/all.yaml` is a fake credential for a local throwaway lab. Real
+  passwords belong in Ansible Vault or SSH keys, never in a repo.
 
 **changed vs ok — what I observed:**
+- First run of `install-nginx.yaml`: `changed` for installing Nginx, writing the config, removing
+  the default site, creating the symlink and starting the service; the handler ran once at the end.
+  First run of `create-user.yaml`: `changed` for group, user, `.ssh` directory and sudoers file on
+  all three hosts.
+- Second run of both playbooks: every task `ok`, recap `changed=0`. Nothing was touched and the
+  handler did not run.
+- `--check --diff` showed what would change without changing it (like `terraform plan`).
+- `changed` means Ansible modified the host to reach the desired state; `ok` means the host was
+  already in that state.
+- Verification: `/health` returned HTTP 200 on the web servers; `nginx` is correctly absent on `db1`
+  (it is not in the `web` group). On all three hosts `id deploy` shows uid/gid 1000, `/home/deploy/.ssh`
+  is `drwx------` owned by `deploy`, and `/etc/sudoers.d/deploy` contains
+  `deploy ALL=(ALL) NOPASSWD:ALL`.
 
 ---
 
 ## Guided questions — answers
 
-*(Fill these in after completing the challenge.)*
-
 **Q1 — notify and handlers:**
+`notify` marks a handler to run if the task reports `changed`. The handler runs once, at the end of the
+play, no matter how many tasks notified it. In my runs the handler `Restart Nginx` ran on the first
+run (the config changed) and did not run on the second (nothing changed).
 
 **Q2 — state present vs latest:**
+`present` installs the package only if it is missing and leaves an installed version alone. `latest`
+upgrades it to the newest version whenever one exists. `present` is preferred in production because
+runs stay predictable and repeatable: a routine playbook run must not silently upgrade a package
+and restart or break a service. Upgrades should be a deliberate, tested change (for example with a
+pinned version). *(Reasoning only, I did not run `latest`.)*
 
 **Q3 — task vs handler:**
+A task runs every time (and reports ok/changed). A handler is a task that runs only when notified by
+a task that changed, and only once at the end of the play. Yes, several tasks can notify the same
+handler. In my Nginx playbook three tasks (config, removing the default site, enabling the site)
+notify `Restart Nginx`, and it still restarts only once.
 
 **Q4 — become: true:**
+It makes Ansible run the task with elevated privileges (root by default) after connecting as the
+normal user. The default mechanism is `sudo` (`become_method: sudo`; others such as `su` are possible).
+In this lab I connect as `root`, so it changes nothing, but it is the correct habit for real servers.
 
 **Q5 — changed twice means:**
+On an immediate second run the same task should show `ok`. If it shows `changed` again, the module is
+not idempotent or does not know the real state. Typical cases are `command`/`shell` tasks (Ansible
+cannot know what they did unless `creates:` or `changed_when:` is set). Proper modules like `apt`,
+`user`, `file` and `template` compare the current state with the desired state first. In my runs all
+tasks used such modules and the second run was `changed=0`.

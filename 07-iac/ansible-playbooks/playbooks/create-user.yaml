@@ -1,0 +1,42 @@
+---
+- name: Create deploy user on all servers
+  hosts: servers
+  become: true
+
+  tasks:
+    - name: Install sudo (needed for the sudoers file)
+      apt:
+        name: sudo
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create deploy group
+      group:
+        name: "{{ app_user }}"
+        state: present
+
+    - name: Create deploy user
+      user:
+        name: "{{ app_user }}"
+        group: "{{ app_user }}"
+        shell: /bin/bash
+        home: "/home/{{ app_user }}"
+        create_home: true
+        state: present
+
+    - name: Create .ssh directory
+      file:
+        path: "/home/{{ app_user }}/.ssh"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0700"
+
+    - name: Set up sudoers for deploy user (NOPASSWD)
+      copy:
+        content: "{{ app_user }} ALL=(ALL) NOPASSWD:ALL\n"
+        dest: "/etc/sudoers.d/{{ app_user }}"
+        owner: root
+        group: root
+        mode: "0440"

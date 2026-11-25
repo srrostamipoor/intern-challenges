@@ -1,0 +1,18 @@
+services:
+  web1:
+    image: ansible-ssh-target:22.04
+    container_name: web1
+    ports:
+      - "2221:22"
+
+  web2:
+    image: ansible-ssh-target:22.04
+    container_name: web2
+    ports:
+      - "2222:22"
+
+  db1:
+    image: ansible-ssh-target:22.04
+    container_name: db1
+    ports:
+      - "2223:22"
