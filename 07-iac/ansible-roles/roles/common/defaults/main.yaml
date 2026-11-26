@@ -1,0 +1,3 @@
+deploy_user: deploy
+deploy_group: deploy
+ssh_port: 22

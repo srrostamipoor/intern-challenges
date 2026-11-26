@@ -1,0 +1,6 @@
+common_packages:
+  - curl
+  - vim
+  - git
+  - htop
+  - ufw

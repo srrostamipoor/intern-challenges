@@ -1,0 +1,4 @@
+nginx_port: 80
+server_name: "localhost"
+upstream_host: "127.0.0.1"
+upstream_port: 8080

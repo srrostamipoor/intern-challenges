@@ -339,26 +339,93 @@ Use `copy` for static files that are identical everywhere.
 ---
 ## Write-up
 
-*(Fill this in after completing the challenge.)*
-
 **What I built:**
+An Ansible project with three roles: `common` (packages, `deploy` group and user, UFW), `nginx`
+(install, Jinja2 config template, reload handler) and `app-deploy` (Python/Flask app behind Nginx).
+`site.yaml` has two plays: `common` runs on every server (`servers`), `nginx` and `app-deploy` run only
+on the `web` group. I ran it against the three Docker "servers" from challenge 36 (same inventory,
+`Dockerfile` and `docker-compose.yaml` are in `../ansible-playbooks`). Tags (`common`, `nginx`, `app`) let
+me run a single role.
+
+**What I changed from the challenge text, and why:**
+- The challenge's `common` role creates the user with `group: deploy` but never creates the group, so the `user`
+  module would fail. I added a `group` task.
+- `vars/main.yaml` is listed in the deliverables but has no content. I used it for `common_packages`
+  (an internal constant) and kept `defaults/main.yaml` for values a user may override.
+- `deploy_user` was only defined in the defaults of `common`, but `app-deploy` runs in the second play where
+  `common` is not loaded, so the variable did not exist there. I defined it in `inventory/group_vars/all.yaml`.
+- The `app-deploy` tasks notify a handler `Restart app` that is not defined anywhere. I added `handlers/main.yaml`.
+- `--tags nginx` needs `tags:` on the roles in `site.yaml`; I added them.
+- Containers have no systemd and no real firewall, so I skip both UFW tasks with
+  `when: ansible_facts['virtualization_type'] != "docker"`. The systemd unit file is still written; the app is
+  started with `start-stop-daemon` when the service manager is not systemd. These branches are only exercised
+  in containers: the UFW tasks and the systemd branch were never executed.
+- `install_recommends: false` on the Python install (otherwise `python3-pip` pulls a compiler toolchain), and
+  `retries`/`until` on apt installs because of an unreliable network.
+- I added `add_header X-Served-By {{ inventory_hostname }};` to the Nginx template as a visible per-host value.
 
 **What I struggled with:**
+- The network was very slow (about 78 kB/s for package lists), so `apt` tasks took minutes. Pressing Ctrl+C on the
+  control node does not stop the `apt` process already running in the container; it kept the apt lock and later
+  runs failed with "Could not get lock". After an interrupted run I restarted the containers.
+- `cache_valid_time` only checks the time of the last update, not whether the package lists are complete. After an
+  interrupted update, the task said `ok` but `apt` then failed with "No package matching 'curl' is available".
+  Running `apt-get update` by hand fixed it.
+- `--check` (dry run) failed on "Enable site" in the very first run: in check mode the
+  config file is not really created, so the symlink target does not exist. It is a limit of check mode, not a bug.
+- My first container fallback (`start-stop-daemon --exec /usr/bin/python3`) was not idempotent: every run showed
+  `changed`, because the running process is `python3.10` and did not match `--exec`. It also overwrote the pid
+  file with the pid of a second instance that died (port 8080 was already in use). Matching by pid file only
+  (`--startas` instead of `--exec`) fixed it; the second run then showed `changed=0`.
 
 **What I'd do differently:**
+Use a container image with systemd (or a VM) so the real systemd and UFW paths can be tested, bake the common
+packages into the image or use a local apt cache to avoid downloading the same packages three times, and add a
+Molecule test for the `nginx` role. I did not do the stretch goals (`ansible-galaxy init`, `meta` dependencies, Molecule).
+
+**Idempotency — what I observed:**
+- First full run: `changed` for packages, group, user, Nginx install/config/link/default-site removal/start,
+  Python and Flask install, app files and app start. `db1` only got the `common` role (`ok=5`).
+- Second run: every task `ok`, `changed=0` on all three hosts. The UFW tasks and the systemd task showed `skipping`.
+- Change test: after adding one line to the template, `--diff` showed exactly that line for each host, the handler
+  `Reload Nginx` ran once per host, and the next run was `changed=0` again.
+- The site answers through Nginx: `/health` returns `200 ok`, and `/` returns the Flask JSON
+  `{"status": "deployed by ansible"}` with header `X-Served-By: web1` or `web2`. Before the app role was added,
+  `/` returned `502 Bad Gateway` because nothing listened on port 8080.
 
 ---
 
 ## Guided questions — answers
 
-*(Fill these in after completing the challenge.)*
-
 **Q1 — vars vs defaults precedence:**
+`defaults/main.yaml` has the lowest precedence of all variables: it is the place for values a user of the role is
+expected to override (inventory, `group_vars`, play or role `vars:`, `-e`). `vars/main.yaml` has a much higher
+precedence (higher than inventory and play vars; only extra vars `-e` and a few others beat it), so it is for
+internal constants that should not be overridden. When both define the same variable, **`vars` wins**.
+Observed for defaults: `nginx` has `server_name: localhost` in defaults, `site.yaml` passes
+`server_name: "myapp.example.com"` and the config file really was created as
+`/etc/nginx/sites-available/myapp.example.com`. The precedence of `vars/main.yaml` itself I did not test; that part
+is from the documentation.
 
 **Q2 — template vs copy choice:**
+`nginx.conf.j2` contains placeholders (`{{ server_name }}`, port, upstream) and may differ per host or
+environment, so it must be rendered with `template`. `app.py` is the same on every server and has no Jinja2
+placeholders, so `copy` (verbatim) is enough, and it also avoids Jinja2 interpreting braces in code. Observed:
+with the `X-Served-By {{ inventory_hostname }}` line, web1 answered `web1` and web2 answered `web2` from the same template.
 
 **Q3 — reloaded vs restarted:**
+`reloaded` makes Nginx re-read its configuration while the master process keeps running and old workers finish
+their requests, so there is no dropped connection. `restarted` stops the process and starts it again, which
+gives a short downtime and cuts open connections. For Nginx `reload` is preferred for config changes (ideally after
+checking the config with `nginx -t`). Observed: the `Reload Nginx` handler worked in the containers; I did not
+measure dropped connections.
 
-**Q4 — new server, which roles run:**
+**Q4 — new server in `web`, which roles run:**
+All three. Play 1 targets `servers`, which includes `web` through `[servers:children]`, so `common` runs; play 2
+targets `web`, so `nginx` and `app-deploy` run. Consistent with what I saw: `db1` (in `db`, not in `web`) only
+received `common` (`ok=5`). I did not add a fourth server.
 
-**Q5 — handler notified multiple times:**
+**Q5 — handler notified by multiple tasks:**
+Once per host, at the end of the play, even if several tasks reported `changed`. In my first full run three Nginx
+tasks (template, enable site, remove default site) all notified `Reload Nginx` and the handler ran once per host.
+If no task changes anything, it does not run at all (second run).

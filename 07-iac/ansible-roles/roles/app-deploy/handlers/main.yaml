@@ -1,0 +1,17 @@
+---
+- name: Restart app (systemd)
+  systemd:
+    name: myapp
+    state: restarted
+    daemon_reload: true
+  when: ansible_facts['service_mgr'] == 'systemd'
+  listen: Restart app
+
+- name: Restart app (no systemd)
+  shell: |
+    start-stop-daemon --stop --pidfile /run/myapp.pid --retry 5 || true
+    start-stop-daemon --start --background --make-pidfile \
+      --pidfile /run/myapp.pid --chuid {{ deploy_user }} \
+      --chdir {{ app_dir }} --exec /usr/bin/python3 -- {{ app_dir }}/app.py
+  when: ansible_facts['service_mgr'] != 'systemd'
+  listen: Restart app

@@ -1,0 +1,19 @@
+---
+- name: Common configuration
+  hosts: servers
+  become: true
+  roles:
+    - role: common
+      tags: common
+
+- name: Web server setup
+  hosts: web
+  become: true
+  roles:
+    - role: nginx
+      vars:
+        server_name: "myapp.example.com"
+        upstream_port: 8080
+      tags: nginx
+    - role: app-deploy
+      tags: app

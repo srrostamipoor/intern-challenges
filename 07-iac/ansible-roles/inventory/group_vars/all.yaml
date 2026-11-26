@@ -1,0 +1,9 @@
+# Ansible connection settings for all hosts
+ansible_user: root
+ansible_password: root
+ansible_ssh_extra_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+ansible_python_interpreter: /usr/bin/python3
+# App-level variables
+app_name: "myapp"
+app_user: "deploy"
+deploy_user: deploy

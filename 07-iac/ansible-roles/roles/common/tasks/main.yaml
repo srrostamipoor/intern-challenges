@@ -1,0 +1,40 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install common packages
+  apt:
+    name: "{{ common_packages }}"
+    state: present
+  register: pkg_result
+  retries: 3
+  delay: 5
+  until: pkg_result is succeeded
+
+- name: Create deploy group
+  group:
+    name: "{{ deploy_group }}"
+    state: present
+
+- name: Create deploy user
+  user:
+    name: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    shell: /bin/bash
+    create_home: true
+    state: present
+
+- name: Configure UFW - allow SSH
+  ufw:
+    rule: allow
+    port: "{{ ssh_port }}"
+    proto: tcp
+  when: ansible_facts['virtualization_type'] != "docker"
+
+- name: Enable UFW
+  ufw:
+    state: enabled
+    policy: deny
+  when: ansible_facts['virtualization_type'] != "docker"
